@@ -445,11 +445,11 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
                 image_np = output[0].cpu().numpy()  
                 image = Image.fromarray((image_np * 255).astype(np.uint8)) 
 
-                results = yolo_model(image)
+                results = yolo_model(image, verbose=False)
                 detections = results[0].boxes
                 class_indices = detections.cls.int().tolist()
                 bboxes =detections.xyxy.cpu().numpy()
-                print("YOLO Detected Classes:", class_indices)
+                # print("YOLO Detected Classes:", class_indices)
 
                 # Use SAM to get masks
                 segmenter.set_image(image_np)
@@ -468,10 +468,10 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
                 feats = torch.nn.functional.normalize(torch.tensor(clip_feature_map, device = dev), dim=-1)
                 
                 # for 512->16 
-                print("feats shape before",feats.shape)
+                # print("feats shape before",feats.shape)
                 if compress:
                     feats = feats @ encoder_decoder.encoder #(512->16)
-                print("feats shape after",feats.shape)
+                # print("feats shape after",feats.shape)
                 
                 image_id+=1
 
@@ -553,7 +553,6 @@ def main(
     )
     # splats_optimized = prune_by_gradients(splats)
     # print("Prunign done")
-    # sys.exit()
     # test_proper_pruning(splats, splats_optimized)
     # splats = splats_optimized
     # features = create_feature_field_detr_sam_clip(splats, sam_checkpoint, clip_embedding_path)
@@ -561,7 +560,7 @@ def main(
 
     print("features_size", features.shape)
     
-    torch.save(features, f"{results_dir}/features_detr.pt")
+    torch.save(features, f"{results_dir}/features.pt")
 
 if __name__ == "__main__":
     tyro.cli(main)
