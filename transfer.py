@@ -74,7 +74,7 @@ class ObjectDetector:
             ax.add_patch(plt.Rectangle((xmin, ymin), xmax - xmin, ymax - ymin,
                                     fill=False, color=c, linewidth=3))
             cl = p.argmax()
-            text = f'{CLASSES[cl]}: {p[cl]:0.2f}'
+            text = f'{class_names[cl]}: {p[cl]:0.2f}'
             ax.text(xmin, ymin, text, fontsize=15,
                     bbox=dict(facecolor='yellow', alpha=0.5))
         plt.axis('off')
