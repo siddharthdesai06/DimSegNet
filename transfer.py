@@ -472,7 +472,7 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
                 if compress:
                     feats = feats @ encoder_decoder.encoder #(512->16)
                 # print("feats shape after",feats.shape)
-                
+        
                 image_id+=1
 
             # Backproject features onto gaussians
@@ -506,24 +506,19 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
 
             target_0 = (output_for_grad[0]).sum()
             target_0.to(device)
-            
             target_0.backward()
 
             gaussian_features += colors_feats_copy
             gaussian_denoms += colors_feats_0.grad[:, 0]
             colors_feats_0.grad.zero_()
-
             del viewmat, meta, _, output, feats, output_for_grad, colors_feats_copy, target, target_0
             torch.cuda.empty_cache()
             
             # Normalize and handle NaNs
     gaussian_features = gaussian_features / gaussian_denoms[..., None]
     gaussian_features = gaussian_features / gaussian_features.norm(dim=-1, keepdim=True)
-    
     gaussian_features[torch.isnan(gaussian_features)] = 0
-    
     return gaussian_features
-
 
 def main(
     data_dir: str = "/home/open/SKV_Mid_Rv/gaussian-splatting/data/outside_IDR_obj_track",  # colmap path
@@ -532,7 +527,7 @@ def main(
     # data_dir: str = "/home/siddharth/siddharth/thesis/3dgs-gradient-backprojection/data/garden",  # colmap path
     # checkpoint: str = "/home/siddharth/siddharth/thesis/3dgs-gradient-backprojection/data/garden/ckpts/ckpt_29999_rank0.pt",  # checkpoint path, can generate from original 3DGS repo
     # results_dir: str = "./results/garden",  # outpu
-    sam_checkpoint: str = "/home/siddharth/siddharth/thesis/my_seg_yolo/sam_vit_h_4b8939.pth",
+    sam_checkpoint: str = "./sam_vit_h_4b8939.pth",
     clip_embedding_path: str = "clip_coco_embeddings_hf.npy",
     rasterizer: Literal[
         "inria", "gsplat"

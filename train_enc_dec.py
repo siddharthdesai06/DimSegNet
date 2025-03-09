@@ -95,4 +95,3 @@ num_epochs = 10000
 save_path = "./encoder_decoder.ckpt"
 
 train(model, embedding_matrix, device, num_epochs, save_path)
-
