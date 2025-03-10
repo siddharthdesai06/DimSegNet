@@ -18,9 +18,8 @@ from typing import Literal
 import tyro
 from ultralytics import YOLO
 import torch.nn as nn
+
 dev = "cuda"
-
-
 
 class EncoderDecoder(nn.Module):
     def __init__(self):
@@ -35,7 +34,7 @@ class EncoderDecoder(nn.Module):
 
 
 encoder_decoder = EncoderDecoder().to("cuda")
-encoder_decoder.load_state_dict(torch.load("/home/siddharth/siddharth/thesis/my_seg_yolo/enc_dec_model/encoder_decoder.ckpt"))
+encoder_decoder.load_state_dict(torch.load("./encoder_decoder.ckpt"))
 
 
 class ObjectDetector:
@@ -198,58 +197,6 @@ class Visualizer:
             plt.savefig(save_path, bbox_inches="tight")
         
         plt.close()  # Close the plot after saving# Ensure no display
-
-
-# def main(image_path, sam_checkpoint, clip_embeddings_path, COLORS, save_dir):
-#     tt = time.time()
-    
-
-#     image = Image.open(image_path)
-#     image_np = np.array(image)
-#     detector = ObjectDetector()
-#     segmenter = SAMSegmenter(sam_checkpoint)
-#     clip_extractor = CLIPFeatureExtractor(clip_embeddings_path)
-#     t1 = time.time()
-#     print("t1", t1 - tt)
-
-#     bboxes, keep = detector.detect_objects(image)
-#     print("keep", keep)
-
-
-# # Get class labels
-#     labels = [CLASSES[i] for i in keep]
-#     print(labels)
-
-#     t2 = time.time()
-#     print("t2", t2-t1)
-
-
-#     segmenter.set_image(image_np)
-#     t3 = time.time()
-#     print("t3", t3-t2)
-
-#     masks = segmenter.segment_objects(bboxes.detach().cpu().numpy())
-#     t4 = time.time()
-#     print("t4", t4-t3)
-
-#     # print("masks_shape is==>>",masks.shape)
-#     # print(keep.nonzero().flatten().tolist())
-    
-#     feature_map = clip_extractor.generate_feature_map(image, masks.squeeze(1), keep, CLASSES)
-#     t5 = time.time()
-#     print("t5", t5-t4)
-    
-#     # os.makedirs(save_dir, exist_ok=True)
-#     # image_name = os.path.splitext(os.path.basename(IMAGE_PATH))[0]
-
-#     save_path = os.path.join(save_dir,"lang_feat.npy")
-#     np.save(save_path,feature_map)
-#     print("Clip Language Features saved at " ,save_dir)
-#     t6 = time.time()
-#     print("t5", t6-t5)
-#     # Visualizer.plot_segmentation(image_np, masks.squeeze(1))
-#     # Visualizer.show_binary_mask(masks[3].squeeze(0))
-
 
 # # Configurable variables
 IMAGE_PATH = "/home/siddharth/siddharth/thesis/3dgs-gradient-backprojection/data/garden/images/DSC07956.JPG"
