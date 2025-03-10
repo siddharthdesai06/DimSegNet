@@ -156,41 +156,6 @@ def load_clip_feature_map(feature_path):
     print(f"Loaded feature map from {feature_path}, shape: {clip_feature_map.shape}")
     return clip_feature_map
 
-def get_mask3d_detr(splats, gaussian_features, prompt, neg_prompt, threshold=None):
-    # Load CLIP model and processor
-
-    clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to("cuda")
-    clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
-    
-
-    print(gaussian_features.shape)
-    # sys.exit()
-    # Load CLIP feature map
-    # clip_feature_map = load_clip_feature_map(clip_feature_path)
-    
-    # Process text prompts
-    prompts = [prompt] + neg_prompt.split(";")
-    inputs = clip_processor(text=prompts, return_tensors="pt", padding=True)
-    text_feat = clip_model.get_text_features(**inputs)  # Shape: [num_queries, 512]
-    text_feat = torch.nn.functional.normalize(text_feat, p=2, dim=1)
-    
-    # Reshape feature map for similarity computation
-    # h, w, _ = clip_feature_map.shape
-    # clip_feature_map_reshaped = clip_feature_map.reshape(-1, 512)
-    
-    # Compute similarity scores
-    score = gaussian_features @ text_feat.T
-    
-    # Compute masks
-    mask_3d = score[:, 0] > score[:, 1:].max(dim=1)[0]
-    if threshold is not None:
-        mask_3d = mask_3d & (score[:, 0] > threshold)
-    
-    mask_3d_inv = ~mask_3d
-    
-    return mask_3d, mask_3d_inv
-
-
 def get_mask3d_yolo(splats, gaussian_features, prompt, neg_prompt, threshold=None):
     # Load CLIP model and processor
 
@@ -208,20 +173,13 @@ def get_mask3d_yolo(splats, gaussian_features, prompt, neg_prompt, threshold=Non
     # Dim redn
     text_feat_compressed = text_feat_norm@encoder_decoder.encoder # 512 -> 16
     text_feat = torch.nn.functional.normalize(text_feat_compressed,p=2,dim=1)
-    
-    # Reshape feature map for similarity computation
-    # h, w, _ = clip_feature_map.shape
-    # clip_feature_map_reshaped = clip_feature_map.reshape(-1, 512)
-    
+
     # Compute similarity scores
     score = gaussian_features @ text_feat.T
     
     # Compute masks
     mask_3d = score[:, 0] > score[:, 1:].max(dim=1)[0]
-    print(score.shape)
-    # sys.exit()
-    # mask_3d = (score[:, 0] > score[:, 1:].max(dim=1)[0]) | (score[:, 1] > score[:,list(range(2, score.size(1)))].max(dim=1)[0])
-
+    # print(score.shape)
 
     if threshold is not None:
         mask_3d = mask_3d & (score[:, 0] > threshold)
@@ -229,66 +187,6 @@ def get_mask3d_yolo(splats, gaussian_features, prompt, neg_prompt, threshold=Non
     mask_3d_inv = ~mask_3d
     
     return mask_3d, mask_3d_inv
-
-# def get_mask3d_lseg(splats, features, prompt, neg_prompt, threshold=None):
-
-#     net = LSegNet(
-#         backbone="clip_vitl16_384",
-#         features=256,
-#         crop_size=480,
-#         arch_option=0,
-#         block_depth=0,
-#         activation="lrelu",
-#     )
-#     # Load pre-trained weights
-#     net.load_state_dict(torch.load("./checkpoints/lseg_minimal_e200.ckpt"))
-#     net.eval()
-#     net.cuda()
-
-#     # Preprocess the text prompt
-#     clip_text_encoder = net.clip_pretrained.encode_text
-
-#     prompts = [prompt] + neg_prompt.split(";")
-#     print(prompts)
-#     prompt = clip.tokenize(prompts)
-#     prompt = prompt.cuda()
-#     print(prompt)
-
-#     text_feat = clip_text_encoder(prompt)  # N, 512, N - number of prompts
-#     print('text_feature==========>',text_feat.shape)
-    
-#     text_feat_norm = torch.nn.functional.normalize(text_feat, dim=1)
-
-#     features = torch.nn.functional.normalize(features, dim=1)
-    
-#     # for dim_redn......................
-#     print("feat_shape",features.shape)
-#     # print("text_feat", text_feat_norm.shape)
-#     # text_feat_norm = text_feat_norm.unsqueeze(-1)
-#     # text_feat_norm = text_feat_norm.unsqueeze(-1)
-#     # print("text_feat_later", text_feat_norm.shape)
-#     # text_feat_norm = text_feat_norm.to(torch.float32)
-#     # with torch.no_grad():
-#     #     encoded,_=model(text_feat_norm) 
-#     # print("encoded_shape", encoded.shape)
-#     # encoded_text_feat = encoded.squeeze(-1)  
-#     # encoded_text_feat = encoded_text_feat.squeeze(-1)  
-#     # print("encoded_text_shape", encoded_text_feat.shape)
-#     # text_feat_norm = encoded_text_feat
-
-#     #end ..........................................
-#     # sys.exit()
-#     score = features @ text_feat_norm.float().T
-#     print("score shape",score.shape)
-       
-#     # sys.exit()
-#     mask_3d = score[:, 0] > score[:, 1:].max(dim=1)[0]
-#     if threshold is not None:
-#         mask_3d = mask_3d & (score[:, 0] > threshold)
-#     mask_3d_inv = ~mask_3d
-
-    # return mask_3d, mask_3d_inv
-
 
 def apply_mask3d(splats, mask3d, mask3d_inverted):
     if mask3d_inverted == None:
@@ -341,8 +239,6 @@ def render_to_gif(
     aux_dir = output_path + ".images"
     os.makedirs(aux_dir, exist_ok=True)
     for image in sorted(splats["colmap_project"].images.values(), key=lambda x: x.name):
-        # print(image.name)
-        # sys.exit()
         viewmat = get_viewmat_from_colmap_image(image)
         output, alphas, meta = rasterization(
             means,
@@ -390,10 +286,6 @@ def main(
     "inria", "gsplat"
     ] = "inria",  # Original or gsplat for checkpoints
     prompt: str = "person", # the one to be extracted or deleted
-    # neg_classes = [cls for cls in CLASSES if cls.lower() != prompt.lower() and cls != "N/A"],
-    # neg_prompt = "; ".join(neg_classes),
-
-    # neg_prompt: str = "Table; Plants;  ;others ",
     data_factor: int = 4,
     show_visual_feedback: bool = True,
 ):
@@ -417,10 +309,12 @@ def main(
     splats = load_checkpoint(
         checkpoint, data_dir, rasterizer=rasterizer, data_factor=data_factor
     )
+
     # splats_optimized = prune_by_gradients(splats)
     # test_proper_pruning(splats, splats_optimized)
     # splats = splats_optimized
-    features = torch.load(f"{results_dir}/features_detr.pt")
+
+    features = torch.load(f"{results_dir}/features.pt")
     print("features shape================>>",features.shape)
     mask3d, mask3d_inv = get_mask3d_yolo(splats, features,prompt, neg_prompt)
     
