@@ -36,60 +36,6 @@ class EncoderDecoder(nn.Module):
 encoder_decoder = EncoderDecoder().to("cuda")
 encoder_decoder.load_state_dict(torch.load("./encoder_decoder.ckpt"))
 
-
-class ObjectDetector:
-    def __init__(self, model_name='detr_resnet50', conf_threshold=0.8):
-        self.conf_threshold = conf_threshold
-        self.model = torch.hub.load('facebookresearch/detr', model_name, pretrained=True)
-        self.model.eval()
-        self.model.to(dev)
-        self.transform = T.Compose([
-            T.Resize(800),
-            T.ToTensor(),
-            T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-        ])
-    
-    def preprocess(self, image):
-        return self.transform(image).unsqueeze(0)
-    
-    def box_cxcywh_to_xyxy(self,x):
-        x_c, y_c, w, h = x.unbind(1)
-        b = [(x_c - 0.5 * w), (y_c - 0.5 * h),
-            (x_c + 0.5 * w), (y_c + 0.5 * h)]
-        return torch.stack(b, dim=1)
-
-    def rescale_bboxes(self, out_bbox, size):
-        img_w, img_h = size
-        b = self.box_cxcywh_to_xyxy(out_bbox)
-        b = b * torch.tensor([img_w, img_h, img_w, img_h], dtype=torch.float32)
-        return b
-    
-    def plot_results(self, pil_img, prob, boxes):
-        plt.figure(figsize=(16,10))
-        plt.imshow(pil_img)
-        ax = plt.gca()
-        colors = COLORS * 100
-        for p, (xmin, ymin, xmax, ymax), c in zip(prob, boxes.tolist(), colors):
-            ax.add_patch(plt.Rectangle((xmin, ymin), xmax - xmin, ymax - ymin,
-                                    fill=False, color=c, linewidth=3))
-            cl = p.argmax()
-            text = f'{class_names[cl]}: {p[cl]:0.2f}'
-            ax.text(xmin, ymin, text, fontsize=15,
-                    bbox=dict(facecolor='yellow', alpha=0.5))
-        plt.axis('off')
-        plt.show()
-
-    def detect_objects(self, image):
-        img_tensor = self.preprocess(image).to(dev)
-        outputs = self.model(img_tensor)
-        probas = outputs['pred_logits'].softmax(-1)[0, :, :-1]
-        keep = probas.max(-1).values > self.conf_threshold
-        # print(image.size)
-        bboxes_scaled = self.rescale_bboxes(outputs['pred_boxes'][0, keep], image.size)
-        # self.plot_results(image, probas[keep], bboxes_scaled)
-        predicted_class_indices = probas.argmax(-1)[keep]
-        return bboxes_scaled, predicted_class_indices
-
 class SAMSegmenter:
     def __init__(self, sam_checkpoint, device=dev):
         self.model = sam_model_registry["vit_h"](checkpoint=sam_checkpoint)
@@ -151,12 +97,10 @@ class CLIPFeatureExtractor:
 
         return feature_map
 
-
     
 class Visualizer:
     @staticmethod
     def plot_segmentation(image, masks, save_dir="segmentations", image_id=0):
-        """Saves the segmentation visualization without displaying it."""
         os.makedirs(save_dir, exist_ok=True)  # Create directory if not exists
         save_path = os.path.join(save_dir, f"image{image_id}.png")
 
@@ -199,10 +143,10 @@ class Visualizer:
         plt.close()  # Close the plot after saving# Ensure no display
 
 # # Configurable variables
-IMAGE_PATH = "/home/siddharth/siddharth/thesis/3dgs-gradient-backprojection/data/garden/images/DSC07956.JPG"
 SAM_CHECKPOINT = "sam_vit_h_4b8939.pth"
 CLIP_EMBEDDINGS_PATH = "clip_coco_embeddings_hf.npy"
 SAVE_DIR = "lang_feat"
+
 # COCO classes
 class_names = {
     0: 'person', 1: 'bicycle', 2: 'car', 3: 'motorcycle', 4: 'airplane', 5: 'bus', 
@@ -222,12 +166,11 @@ class_names = {
     72: 'refrigerator', 73: 'book', 74: 'clock', 75: 'vase', 76: 'scissors', 
     77: 'teddy bear', 78: 'hair drier', 79: 'toothbrush', 80: 'others'
 }
+
 # colors for visualization
 COLORS = [[0.000, 0.447, 0.741], [0.850, 0.325, 0.098], [0.929, 0.694, 0.125],
           [0.494, 0.184, 0.556], [0.466, 0.674, 0.188], [0.301, 0.745, 0.933]]
 
-# if __name__ == "__main__":
-#     main(IMAGE_PATH, SAM_CHECKPOINT, CLIP_EMBEDDINGS_PATH,COLORS,SAVE_DIR)
 
 def torch_to_cv(tensor):
     img_cv = tensor.detach().cpu().numpy()[..., ::-1]
@@ -244,12 +187,9 @@ def _detach_tensors_from_dict(d, inplace=True):
     return d
 
 def get_viewmat_from_colmap_image(image):
-    # print("img",image)
     viewmat = torch.eye(4).float()  # .to(device)
     viewmat[:3, :3] = torch.tensor(image.R()).float()  # .to(device)
     viewmat[:3, 3] = torch.tensor(image.t).float()  # .to(device)
-    # print("viewmat", viewmat)
-    # sys.exit()
     return viewmat
 
 def load_checkpoint(
@@ -331,7 +271,6 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
         embed_dim=512
         print(f"Not compressing, dimension kept is {embed_dim}")
         
-    # detector = ObjectDetector()
     yolo_model = YOLO('yolov12x.pt')
     segmenter = SAMSegmenter(sam_checkpoint)
     clip_extractor = CLIPFeatureExtractor(clip_embeddings_path)
@@ -361,13 +300,7 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
 
     colmap_project = splats["colmap_project"]
     images = sorted(colmap_project.images.values(), key=lambda x: x.name)
-    # batch_size = max(1, len(images) // batch_count) if batch_count > 0 else 1
     image_id = 0
-    # for batch_start in tqdm(
-    #     range(0, len(images), batch_size), 
-    #     desc="Feature backprojection (batches)",
-    # ):
-    #     batch = images[batch_start:batch_start + batch_size]
     for image in tqdm(images, desc="Feature backprojection (images)"):
             viewmat = get_viewmat_from_colmap_image(image)
             width = int(K[0, 2] * 2)
@@ -401,10 +334,12 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
                 # Use SAM to get masks
                 segmenter.set_image(image_np)
                 masks = segmenter.segment_objects(bboxes)
+
                 # print(masks.shape)
                 # # sys.exit()
                 # Visualizer.plot_segmentation(image_np, masks.squeeze(1))
                 # Visualizer.show_binary_mask(masks[0].squeeze(0))
+
                 if isinstance(masks, np.ndarray):
                     masks = torch.tensor(masks)  # Convert to PyTorch tensor
 
@@ -415,10 +350,8 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
                 feats = torch.nn.functional.normalize(torch.tensor(clip_feature_map, device = dev), dim=-1)
                 
                 # for 512->16 
-                # print("feats shape before",feats.shape)
                 if compress:
-                    feats = feats @ encoder_decoder.encoder #(512->16)
-                # print("feats shape after",feats.shape)
+                    feats = feats @ encoder_decoder.encoder 
         
                 image_id+=1
 
@@ -471,9 +404,11 @@ def main(
     data_dir: str = "/home/open/SKV_Mid_Rv/gaussian-splatting/data/outside_IDR_obj_track",  # colmap path
     checkpoint: str = "/home/open/SKV_Mid_Rv/gaussian-splatting/output/out_side_idr_mehul_track/chkpnt7000.pth",  # checkpoint path, can generate from original 3DGS repo
     results_dir: str = "./results/idr_out",
+
     # data_dir: str = "/home/siddharth/siddharth/thesis/3dgs-gradient-backprojection/data/garden",  # colmap path
     # checkpoint: str = "/home/siddharth/siddharth/thesis/3dgs-gradient-backprojection/data/garden/ckpts/ckpt_29999_rank0.pt",  # checkpoint path, can generate from original 3DGS repo
-    # results_dir: str = "./results/garden",  # outpu
+    # results_dir: str = "./results/garden",
+    
     sam_checkpoint: str = "./sam_vit_h_4b8939.pth",
     clip_embedding_path: str = "clip_coco_embeddings_hf.npy",
     rasterizer: Literal[
@@ -493,11 +428,13 @@ def main(
     splats = load_checkpoint(
         checkpoint, data_dir, rasterizer=rasterizer, data_factor=data_factor
     )
+
     # splats_optimized = prune_by_gradients(splats)
     # print("Prunign done")
     # test_proper_pruning(splats, splats_optimized)
     # splats = splats_optimized
     # features = create_feature_field_detr_sam_clip(splats, sam_checkpoint, clip_embedding_path)
+
     features = create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embedding_path,embed_dim,compress)
 
     print("features_size", features.shape)
