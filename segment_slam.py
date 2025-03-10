@@ -17,24 +17,6 @@ import sys
 
 from transformers import CLIPProcessor, CLIPModel
 
-
-# CLASSES = [
-#     'N/A', 'person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus',
-#     'train', 'truck', 'boat', 'traffic light', 'fire hydrant', 'N/A',
-#     'stop sign', 'parking meter', 'bench', 'bird', 'cat', 'dog', 'horse',
-#     'sheep', 'cow', 'elephant', 'bear', 'zebra', 'giraffe', 'N/A', 'backpack',
-#     'umbrella', 'N/A', 'N/A', 'handbag', 'tie', 'suitcase', 'frisbee', 'skis',
-#     'snowboard', 'sports ball', 'kite', 'baseball bat', 'baseball glove',
-#     'skateboard', 'surfboard', 'tennis racket', 'bottle', 'N/A', 'wine glass',
-#     'cup', 'fork', 'knife', 'spoon', 'bowl', 'banana', 'apple', 'sandwich',
-#     'orange', 'broccoli', 'carrot', 'hot dog', 'pizza', 'donut', 'cake',
-#     'chair', 'couch', 'potted plant', 'bed', 'N/A', 'dining table', 'N/A',
-#     'N/A', 'toilet', 'N/A', 'tv', 'laptop', 'mouse', 'remote', 'keyboard',
-#     'cell phone', 'microwave', 'oven', 'toaster', 'sink', 'refrigerator', 'N/A',
-#     'book', 'clock', 'vase', 'scissors', 'teddy bear', 'hair drier',
-#     'toothbrush'
-# ]
-
 def torch_to_cv(tensor):
     img_cv = tensor.detach().cpu().numpy()[..., ::-1]
     img_cv = np.clip(img_cv * 255, 0, 255).astype(np.uint8)
@@ -166,20 +148,8 @@ def prune_by_gradients(splats):
     features_rest = splats["features_rest"]
     opacities = splats["opacity"]
     scales = splats["scaling"]
-
-    # print("means",means.shape)
-    # print("quats",quats.shape)
-    # print("features_dc",features_dc.shape)
-    # print("features_rest",features_rest.shape)
-    # print("opacities",opacities.shape)
-    # print("scales",scales.shape)
     
     colors = torch.cat([features_dc, features_rest], dim=1)
-    
-    # print("features_dc_later",features_dc.shape)
-    # print("features_rest_later",features_rest.shape)
-    # print("colors_later",colors.shape)
-
     opacities = torch.sigmoid(opacities)
     scales = torch.exp(scales)
     
@@ -286,9 +256,6 @@ def test_proper_pruning(splats, splats_after_pruning):
         * 100
     )
 
-    # assert max_pixel_error < 1 / (
-    #     255 * 2
-    # ), "Max pixel error should be less than 1/(255*2), safety margin"
     print(
         "Report {}% pruned, max pixel error = {}, total pixel error = {}".format(
             percentage_pruned, max_pixel_error, total_error
@@ -308,20 +275,13 @@ def get_mask3d_yolo(splats, gaussian_features, prompt, neg_prompt, threshold=Non
     inputs = clip_processor(text=prompts, return_tensors="pt", padding=True)
     text_feat = clip_model.get_text_features(**inputs)  # Shape: [num_queries, 512]
     text_feat = torch.nn.functional.normalize(text_feat, p=2, dim=1)
-    
-    # Reshape feature map for similarity computation
-    # h, w, _ = clip_feature_map.shape
-    # clip_feature_map_reshaped = clip_feature_map.reshape(-1, 512)
-    
+
     # Compute similarity scores
     score = gaussian_features @ text_feat.T
     
     # Compute masks
     mask_3d = score[:, 0] > score[:, 1:].max(dim=1)[0]
-    print(score.shape)
-    # sys.exit()
-    # mask_3d = (score[:, 0] > score[:, 1:].max(dim=1)[0]) | (score[:, 1] > score[:,list(range(2, score.size(1)))].max(dim=1)[0])
-
+    # print(score.shape)
 
     if threshold is not None:
         mask_3d = mask_3d & (score[:, 0] > threshold)
@@ -380,7 +340,7 @@ def render_to_gif(
     K = splats["camera_matrix"]
     aux_dir = output_path + ".images"
     os.makedirs(aux_dir, exist_ok=True)
-    # for image in sorted(splats["colmap_project"].images.values(), key=lambda x: x.name):
+    
     for cam in splats["slam_positions"]:    
         viewmat = get_viewmat_position_and_rotation(cam["position"], cam["rotation"])
         output, alphas, meta = rasterization(
@@ -436,6 +396,7 @@ def main(
     # json_directory: str = "/home/siddharth/siddharth/thesis/RTG-SLAM/output/dataset/Replica/office0/cameras.json",  # camera json file
     # checkpoint: str = "/home/siddharth/siddharth/thesis/RTG-SLAM/output/dataset/Replica/office0/save_model/frame_2000/iter_1139_stable.pth",  # checkpoint path, can generate from original 3DGS repo
     # results_dir: str = "/home/siddharth/siddharth/thesis/my_seg/results/replica/office0",  # output path
+    
     json_directory: str = "/home/siddharth/siddharth/thesis/RTG-SLAM/output/dataset/Replica/office0/cameras.json",  # camera json file
     checkpoint: str = "/home/siddharth/siddharth/thesis/RTG-SLAM/output/dataset/Replica/office0/save_model/frame_2000/iter_1139_stable.pth",  # checkpoint path, can generate from original 3DGS repo
     results_dir: str = "/home/siddharth/siddharth/thesis/my_seg_yolo/output/replica/office0",  # output path
@@ -444,7 +405,6 @@ def main(
         "inria", "gsplat"
     ] = "inria",  # Original or gsplat for checkpoints
     prompt: str = "chair", # the one to be extracted or deleted
-    # neg_prompt: str = "tv; chair",
     data_factor: int = 4,
     show_visual_feedback: bool = True,
 ):
@@ -454,11 +414,9 @@ def main(
         neg_classes = [name for name in class_names.values() if name != prompt] + ["others"]
     else:
         neg_classes = ["others"]
-
-    # neg_classes = ["others"]  
+  
     neg_prompt = "; ".join(neg_classes)
     print(neg_prompt)
-    # sys.exit()
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is required for this demo")
 
@@ -473,7 +431,7 @@ def main(
     # test_proper_pruning(splats, splats_optimized)
     # splats = splats_optimized
 
-    features = torch.load(f"{results_dir}/features_detr.pt")
+    features = torch.load(f"{results_dir}/features.pt")
     mask3d, mask3d_inv = get_mask3d_yolo(splats, features, prompt, neg_prompt)
     # # To debug
     # mask3d[mask3d==False] = True
