@@ -5,3 +5,4 @@ results/
 *.npy
 segmentations/
 *.pth
+eval_datasets/
