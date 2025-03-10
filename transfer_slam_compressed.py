@@ -28,8 +28,6 @@ from transformers import CLIPProcessor, CLIPModel
 import torch.nn as nn
 
 
-
-
 dev = "cuda"
 
 
@@ -48,89 +46,6 @@ class EncoderDecoder(nn.Module):
 encoder_decoder = EncoderDecoder().to("cuda")
 encoder_decoder.load_state_dict(torch.load("/home/siddharth/siddharth/thesis/my_seg_yolo/enc_dec_model/encoder_decoder.ckpt"))
 
-
-class ObjectDetector:
-    def __init__(self, model_name='detr_resnet50', conf_threshold=0.5, save_folder = "detected_images"):
-        self.conf_threshold = conf_threshold
-        self.model = torch.hub.load('facebookresearch/detr', model_name, pretrained=True)
-        self.model.eval()
-        self.model.to(dev)
-        self.transform = T.Compose([
-            T.Resize(800),
-            T.ToTensor(),
-            T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-        ])
-
-        self.save_folder = save_folder
-        os.makedirs(self.save_folder, exist_ok=True)  # Create folder if it doesn't exist
-        self.image_counter = len(os.listdir(self.save_folder))  # Track image count for naming
-
-    
-    def preprocess(self, image):
-        return self.transform(image).unsqueeze(0)
-    
-    def box_cxcywh_to_xyxy(self,x):
-        x_c, y_c, w, h = x.unbind(1)
-        b = [(x_c - 0.5 * w), (y_c - 0.5 * h),
-            (x_c + 0.5 * w), (y_c + 0.5 * h)]
-        return torch.stack(b, dim=1)
-
-    def rescale_bboxes(self, out_bbox, size):
-        img_w, img_h = size
-        b = self.box_cxcywh_to_xyxy(out_bbox)
-        b = b * torch.tensor([img_w, img_h, img_w, img_h], dtype=torch.float32)
-        return b
-    
-    def plot_results(self, pil_img, prob, boxes):
-        plt.figure(figsize=(16,10))
-        plt.imshow(pil_img)
-        ax = plt.gca()
-        colors = COLORS * 100
-        for p, (xmin, ymin, xmax, ymax), c in zip(prob, boxes.tolist(), colors):
-            ax.add_patch(plt.Rectangle((xmin, ymin), xmax - xmin, ymax - ymin,
-                                    fill=False, color=c, linewidth=3))
-            cl = p.argmax()
-            text = f'{class_names[cl]}: {p[cl]:0.2f}'
-            ax.text(xmin, ymin, text, fontsize=15,
-                    bbox=dict(facecolor='yellow', alpha=0.5))
-        plt.axis('off')
-        plt.show()
-
-    def detect_objects(self, image):
-        img_tensor = self.preprocess(image).to(dev)
-        outputs = self.model(img_tensor)
-        probas = outputs['pred_logits'].softmax(-1)[0, :, :-1]
-        keep = probas.max(-1).values > self.conf_threshold
-        # print(image.size)
-        bboxes_scaled = self.rescale_bboxes(outputs['pred_boxes'][0, keep], image.size)
-        # self.plot_results(image, probas[keep], bboxes_scaled)
-        predicted_class_indices = probas.argmax(-1)[keep]
-
-        # self.draw_and_save_results(image, probas[keep], bboxes_scaled, image_name)
-         # Save image with bounding boxes
-        save_path = os.path.join(self.save_folder, f"image{self.image_counter}.jpg")
-        self.image_counter += 1  # Increment counter
-        
-        self.draw_and_save_results(image, probas[keep], bboxes_scaled, save_path)
-        print("saving.........")
-        # sys.exit
-        return bboxes_scaled, predicted_class_indices
-
-    def draw_and_save_results(self, pil_img, prob, boxes, save_path):
-        """Draws bounding boxes on an image and saves the output without displaying."""
-        draw = ImageDraw.Draw(pil_img)
-        font = ImageFont.load_default()  # Use a basic font (change if needed)
-        print("save apth is", save_path)
-        for p, (xmin, ymin, xmax, ymax) in zip(prob, boxes.tolist()):
-            draw.rectangle([xmin, ymin, xmax, ymax], outline="red", width=3)  # Draw bounding box
-            cl = p.argmax()  # Get class index
-            text = f'{class_names[cl]}: {p[cl]:.2f}'  # Format label text
-            draw.text((xmin, ymin), text, fill="yellow", font=font)  # Add label
-
-        pil_img.save(save_path)  # Save the image
-
-
-
 class SAMSegmenter:
     def __init__(self, sam_checkpoint, device=dev):
         self.model = sam_model_registry["vit_h"](checkpoint=sam_checkpoint)
@@ -146,25 +61,6 @@ class SAMSegmenter:
             masks, _, _ = self.predictor.predict(box=box, multimask_output=False)
             all_masks.append(masks)
         return np.array(all_masks)
-    
-# class CLIPFeatureExtractor:
-#     def __init__(self, embeddings_path):
-#         self.embeddings = np.load(embeddings_path, allow_pickle=True).item()
-    
-#     def generate_feature_map(self, image, masks, class_indices, classes):
-#         if masks.is_cuda:
-#             masks = masks.cpu()
-#         H, W, _ = np.array(image).shape
-#         feature_map = np.zeros((H, W, 512), dtype=np.float32)
-#         for i, mask in enumerate(masks):
-#             class_idx = class_indices[i]
-#             if class_idx >= len(classes):
-#                 continue
-#             class_vector = self.embeddings[classes[class_idx]]
-#             feature_map[mask> 0] = class_vector
-#         return feature_map
-
-
 
 class CLIPFeatureExtractor:
     def __init__(self, embeddings_path):
@@ -192,16 +88,11 @@ class CLIPFeatureExtractor:
         if masks.is_cuda:
             masks = masks.cpu()
 
-        # Use the precomputed "others" embedding
         others_embedding = self.others_embedding
-
-        # Get the shape of the image
         H, W, _ = np.array(image).shape
-        
-        # Initialize the feature map with the "others" embedding
+    
         feature_map = others_embedding.repeat(H * W, axis=0).reshape(H, W, 512)
 
-        # Apply the class-specific embeddings for each mask
         for i, mask in enumerate(masks):
             class_idx = class_indices[i]
             if class_idx >= len(classes) or classes[class_idx] == "N/A":
@@ -215,7 +106,6 @@ class CLIPFeatureExtractor:
 class Visualizer:
     @staticmethod
     def plot_segmentation(image, masks, save_dir="segmentations_replica", image_id=0):
-        """Saves the segmentation visualization without displaying it."""
         os.makedirs(save_dir, exist_ok=True)  # Create directory if not exists
         save_path = os.path.join(save_dir, f"image{image_id}.png")
 
@@ -223,18 +113,17 @@ class Visualizer:
         ax.imshow(image)
 
         for mask in masks:
-            # Ensure the mask is a NumPy array
-            mask = mask.cpu().numpy()  # Convert tensor to NumPy array (if it's on GPU, use .cpu())
-            mask = mask.astype(np.uint8) * 255  # Convert to uint8 and scale to 255
+            mask = mask.cpu().numpy()  
+            mask = mask.astype(np.uint8) * 255  
             
-            if np.any(mask > 0):  # Only process non-empty masks
+            if np.any(mask > 0):  
                 contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
                 for contour in contours:
                     ax.plot(contour[:, 0, 0], contour[:, 0, 1], color=np.random.rand(3), linewidth=2)
 
         ax.axis('off')
         fig.savefig(save_path, bbox_inches='tight')
-        plt.close(fig)  # Ensure no display
+        plt.close(fig)  
 
     @staticmethod
     def show_binary_mask(mask, image_id=None):
@@ -242,29 +131,27 @@ class Visualizer:
             print("No masks found.")
             return
         
-        # Move tensor to CPU if it's on GPU and convert to numpy array
+        
         if mask.is_cuda:
-            mask = mask.cpu().numpy()  # Move to CPU and convert to numpy
+            mask = mask.cpu().numpy()  
 
         plt.figure(figsize=(6, 6))
-        plt.imshow(mask, cmap="gray")  # Display binary mask in black & white
+        plt.imshow(mask, cmap="gray")  
         plt.axis("off")
         
-        # Optionally save the image (you can add a name pattern)
+        
         if image_id is not None:
             save_path = f"mask_{image_id}.png"
             plt.savefig(save_path, bbox_inches="tight")
         
-        plt.close()  # Close the plot after saving# Ensure no display
+        plt.close()  
 
 
-# # Configurable variables
+# Configurable variables
 IMAGE_PATH = "/home/siddharth/siddharth/thesis/3dgs-gradient-backprojection/data/garden/images/DSC07956.JPG"
 SAM_CHECKPOINT = "sam_vit_h_4b8939.pth"
 CLIP_EMBEDDINGS_PATH = "clip_coco_embeddings_hf.npy"
 SAVE_DIR = "lang_feat"
-
-
 
 # classes
 class_names = {
@@ -295,7 +182,6 @@ def torch_to_cv(tensor):
     img_cv = np.clip(img_cv * 255, 0, 255).astype(np.uint8)
     return img_cv
 
-
 def _detach_tensors_from_dict(d, inplace=True):
     if not inplace:
         d = d.copy()
@@ -303,7 +189,6 @@ def _detach_tensors_from_dict(d, inplace=True):
         if isinstance(d[key], torch.Tensor):
             d[key] = d[key].detach()
     return d
-
 
 def to_tensor_safe(data):
     if isinstance(data, torch.Tensor):
@@ -334,7 +219,7 @@ def load_checkpoint(
         cameras = json.load(f)
 
     model = torch.load(checkpoint)  # Make sure it is generated by 3DGS original repo
-    # sys.exit()
+  
     if rasterizer == "inria":
         print("using inria rasterizer")
         model_params = model
@@ -413,18 +298,7 @@ def prune_by_gradients(splats):
     opacities = splats["opacity"]
     scales = splats["scaling"]
 
-    # print("means",means.shape)
-    # print("quats",quats.shape)
-    # print("features_dc",features_dc.shape)
-    # print("features_rest",features_rest.shape)
-    # print("opacities",opacities.shape)
-    # print("scales",scales.shape)
-    
     colors = torch.cat([features_dc, features_rest], dim=1)
-    
-    # print("features_dc_later",features_dc.shape)
-    # print("features_rest_later",features_rest.shape)
-    # print("colors_later",colors.shape)
 
     opacities = torch.sigmoid(opacities)
     scales = torch.exp(scales)
@@ -478,8 +352,6 @@ def prune_by_gradients(splats):
     return pruned_splats
 
 def test_proper_pruning(splats, splats_after_pruning):
-    # colmap_project = splats["colmap_project"]
-    # frame_idx = 0
     means = splats["means"]
     colors_dc = splats["features_dc"]
     colors_rest = splats["features_rest"]
@@ -548,150 +420,9 @@ def test_proper_pruning(splats, splats_after_pruning):
         )
     )
 
-
-def create_feature_field_detr_sam_clip(splats, sam_checkpoint, clip_embeddings_path, batch_count=1, use_cpu=False):
-    device = "cpu" if use_cpu else "cuda"
-
-    detector = ObjectDetector()
-    segmenter = SAMSegmenter(sam_checkpoint)
-    clip_extractor = CLIPFeatureExtractor(clip_embeddings_path)
-
-    means = splats["means"].to(device)
-    colors_dc = splats["features_dc"].to(device)
-    colors_rest = splats["features_rest"].to(device)
-    colors_all = torch.cat([colors_dc, colors_rest], dim=1)
-    
-    colors = colors_dc[:, 0, :]  # * 0
-    colors_0 = colors_dc[:, 0, :] * 0
-    colors.to(device)
-    colors_0.to(device)
-
-    opacities = torch.sigmoid(splats["opacity"]).to(device)
-    scales = torch.exp(splats["scaling"]).to(device)
-    quats = splats["rotation"].to(device)
-    K = splats["camera_matrix"].to(device)
-    colors.requires_grad = True
-    colors_0.requires_grad = True
-
-    gaussian_features = torch.zeros(colors_dc.shape[0], 512, device=device)
-    gaussian_denoms = torch.ones(colors_dc.shape[0], device=device) * 1e-12
-    
-    colors_feats = torch.zeros(colors.shape[0], 512, device=colors.device, requires_grad=True)
-    colors_feats_0 = torch.zeros(colors.shape[0], 3, device=colors.device, requires_grad=True)
-
-    slam_positions = splats["slam_positions"]
-    # images = sorted(colmap_project.images.values(), key=lambda x: x.name)
-    # batch_size = max(1, len(images) // batch_count) if batch_count > 0 else 1
-    image_id = 0
-    for cam in tqdm(splats["slam_positions"], desc="Feature backprojection"):
-        # batch = images[batch_start:batch_start + batch_size]
-        # for image in batch:
-            viewmat = get_viewmat_position_and_rotation(cam["position"], cam["rotation"])
-            width = int(K[0, 2] * 2)
-            height = int(K[1, 2] * 2)
-            
-            with torch.no_grad():
-                output, _, meta = rasterization(
-                    means, 
-                    quats, 
-                    scales, 
-                    opacities, 
-                    colors_all, 
-                    viewmat[None], 
-                    K[None], 
-                    width, 
-                    height, 
-                    sh_degree=3,
-                    )
-                image_tensor = output.permute(0, 3, 1, 2).to(device)
-                
-                # Convert rasterized output to PIL image
-                image_np = output[0].cpu().numpy()  
-                image = Image.fromarray((image_np * 255).astype(np.uint8)) 
-
-                # Run DETR to get bounding boxes and class predictions
-                bboxes, class_indices = detector.detect_objects(image)
-                
-                print("keep", class_indices)
-                # labels = [CLASSES[i] for i in class_indices]
-                # print(labels)
-                
-                # Use SAM to get masks
-                segmenter.set_image(image_np)
-                masks = segmenter.segment_objects(bboxes.detach().cpu().numpy())
-                print(masks.shape)
-                # sys.exit()
-                # Visualizer.plot_segmentation(image_np, masks.squeeze(1))
-                # Visualizer.show_binary_mask(masks[0].squeeze(0))
-             
-                if isinstance(masks, np.ndarray):
-                    masks = torch.tensor(masks)  # Convert to PyTorch tensor
-
-                # Get CLIP feature map
-                if masks.numel() > 0:  # Ensure masks are not empt 
-                    Visualizer.plot_segmentation(image_np, masks.squeeze(1), image_id=image_id)
-                    # Visualizer.show_binary_mask(masks[0].squeeze(0), image_id=image_id)
-                    clip_feature_map = clip_extractor.generate_feature_map(image, masks.squeeze(1), class_indices, CLASSES)
-   
-                # clip_feature_map = clip_extractor.generate_feature_map(image, masks.squeeze(1), class_indices, CLASSES)
-                feats = torch.nn.functional.normalize(torch.tensor(clip_feature_map, device = dev), dim=-1)
-
-                image_id+=1
-
-            # Backproject features onto gaussians
-            output_for_grad, _, meta = rasterization(
-                means, 
-                quats, 
-                scales, 
-                opacities, 
-                colors_feats, 
-                viewmat[None], 
-                K[None], 
-                width, 
-                height)
-            
-            target = (output_for_grad[0].to(device) * feats).sum()
-            target.backward()
-            colors_feats_copy = colors_feats.grad.clone()
-            colors_feats.grad.zero_()
-
-            output_for_grad, _, meta = rasterization(
-                means,
-                quats,
-                scales,
-                opacities,
-                colors_feats_0,
-                viewmat[None],
-                K[None],
-                width=width,
-                height=height,
-            )
-
-            target_0 = (output_for_grad[0]).sum()
-            target_0.to(device)
-            
-            target_0.backward()
-
-            gaussian_features += colors_feats_copy
-            gaussian_denoms += colors_feats_0.grad[:, 0]
-            colors_feats_0.grad.zero_()
-
-            del viewmat, meta, _, output, feats, output_for_grad, colors_feats_copy, target, target_0
-            torch.cuda.empty_cache()
-            
-            # Normalize and handle NaNs
-    gaussian_features = gaussian_features / gaussian_denoms[..., None]
-    gaussian_features = gaussian_features / gaussian_features.norm(dim=-1, keepdim=True)
-    
-    gaussian_features[torch.isnan(gaussian_features)] = 0
-    return gaussian_features
-
-
-
 def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_path, embed_dim=512, batch_count=1, use_cpu=False):
     device = "cpu" if use_cpu else "cuda"
 
-    # detector = ObjectDetector()
     yolo_model = YOLO('yolov12x.pt')
     segmenter = SAMSegmenter(sam_checkpoint)
     clip_extractor = CLIPFeatureExtractor(clip_embeddings_path)
@@ -721,12 +452,8 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
     colors_feats_0 = torch.zeros(colors.shape[0], 3, device=colors.device, requires_grad=True)
 
     slam_positions = splats["slam_positions"]
-    # images = sorted(colmap_project.images.values(), key=lambda x: x.name)
-    # batch_size = max(1, len(images) // batch_count) if batch_count > 0 else 1
     image_id = 0
     for cam in tqdm(splats["slam_positions"], desc="Feature backprojection"):
-        # batch = images[batch_start:batch_start + batch_size]
-        # for image in batch:
             viewmat = get_viewmat_position_and_rotation(cam["position"], cam["rotation"])
             width = int(K[0, 2] * 2)
             height = int(K[1, 2] * 2)
@@ -764,8 +491,8 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
                 # Use SAM to get masks
                 segmenter.set_image(image_np)
                 masks = segmenter.segment_objects(bboxes)
-                print(masks.shape)
-                # sys.exit()
+                # print(masks.shape)
+      
                 # Visualizer.plot_segmentation(image_np, masks.squeeze(1))
                 # Visualizer.show_binary_mask(masks[0].squeeze(0))
 
@@ -780,7 +507,6 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
                     # Visualizer.show_binary_mask(masks[0].squeeze(0), image_id=image_id)
                     clip_feature_map = clip_extractor.generate_feature_map(image, masks.squeeze(1), class_indices, class_names)
    
-                # clip_feature_map = clip_extractor.generate_feature_map(image, masks.squeeze(1), class_indices, CLASSES)
                 feats = torch.nn.functional.normalize(torch.tensor(clip_feature_map, device = dev), dim=-1)
                 print("feats shape before",feats.shape)
                 feats = feats @ encoder_decoder.encoder #(512->16)
@@ -861,18 +587,13 @@ def main(
         checkpoint, json_directory, rasterizer=rasterizer, data_factor=data_factor
     )
     # splats_optimized = prune_by_gradients(splats)
-    
-    # # print("Pruning done now exiting")
     # test_proper_pruning(splats, splats_optimized)
-    # print("Proper Pruning done now exiting")
-    # sys.exit()
-    
     # splats = splats_optimized
-    # features = create_feature_field_lseg(splats)
+
     features = create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embedding_path,embed_dim)
 
     print(features.shape)
-    torch.save(features, f"{results_dir}/features_detr.pt")
+    torch.save(features, f"{results_dir}/features.pt")
 
 if __name__ == "__main__":
     tyro.cli(main)

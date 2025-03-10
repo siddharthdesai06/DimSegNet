@@ -530,150 +530,9 @@ def test_proper_pruning(splats, splats_after_pruning):
     )
 
 
-def create_feature_field_detr_sam_clip(splats, sam_checkpoint, clip_embeddings_path, batch_count=1, use_cpu=False):
-    device = "cpu" if use_cpu else "cuda"
-
-    detector = ObjectDetector()
-    segmenter = SAMSegmenter(sam_checkpoint)
-    clip_extractor = CLIPFeatureExtractor(clip_embeddings_path)
-
-    means = splats["means"].to(device)
-    colors_dc = splats["features_dc"].to(device)
-    colors_rest = splats["features_rest"].to(device)
-    colors_all = torch.cat([colors_dc, colors_rest], dim=1)
-    
-    colors = colors_dc[:, 0, :]  # * 0
-    colors_0 = colors_dc[:, 0, :] * 0
-    colors.to(device)
-    colors_0.to(device)
-
-    opacities = torch.sigmoid(splats["opacity"]).to(device)
-    scales = torch.exp(splats["scaling"]).to(device)
-    quats = splats["rotation"].to(device)
-    K = splats["camera_matrix"].to(device)
-    colors.requires_grad = True
-    colors_0.requires_grad = True
-
-    gaussian_features = torch.zeros(colors_dc.shape[0], 512, device=device)
-    gaussian_denoms = torch.ones(colors_dc.shape[0], device=device) * 1e-12
-    
-    colors_feats = torch.zeros(colors.shape[0], 512, device=colors.device, requires_grad=True)
-    colors_feats_0 = torch.zeros(colors.shape[0], 3, device=colors.device, requires_grad=True)
-
-    slam_positions = splats["slam_positions"]
-    # images = sorted(colmap_project.images.values(), key=lambda x: x.name)
-    # batch_size = max(1, len(images) // batch_count) if batch_count > 0 else 1
-    image_id = 0
-    for cam in tqdm(splats["slam_positions"], desc="Feature backprojection"):
-        # batch = images[batch_start:batch_start + batch_size]
-        # for image in batch:
-            viewmat = get_viewmat_position_and_rotation(cam["position"], cam["rotation"])
-            width = int(K[0, 2] * 2)
-            height = int(K[1, 2] * 2)
-            
-            with torch.no_grad():
-                output, _, meta = rasterization(
-                    means, 
-                    quats, 
-                    scales, 
-                    opacities, 
-                    colors_all, 
-                    viewmat[None], 
-                    K[None], 
-                    width, 
-                    height, 
-                    sh_degree=3,
-                    )
-                image_tensor = output.permute(0, 3, 1, 2).to(device)
-                
-                # Convert rasterized output to PIL image
-                image_np = output[0].cpu().numpy()  
-                image = Image.fromarray((image_np * 255).astype(np.uint8)) 
-
-                # Run DETR to get bounding boxes and class predictions
-                bboxes, class_indices = detector.detect_objects(image)
-                
-                print("keep", class_indices)
-                # labels = [CLASSES[i] for i in class_indices]
-                # print(labels)
-                
-                # Use SAM to get masks
-                segmenter.set_image(image_np)
-                masks = segmenter.segment_objects(bboxes.detach().cpu().numpy())
-                print(masks.shape)
-                # sys.exit()
-                # Visualizer.plot_segmentation(image_np, masks.squeeze(1))
-                # Visualizer.show_binary_mask(masks[0].squeeze(0))
-
-                
-                
-                if isinstance(masks, np.ndarray):
-                    masks = torch.tensor(masks)  # Convert to PyTorch tensor
-
-                # Get CLIP feature map
-                if masks.numel() > 0:  # Ensure masks are not empt 
-                    Visualizer.plot_segmentation(image_np, masks.squeeze(1), image_id=image_id)
-                    # Visualizer.show_binary_mask(masks[0].squeeze(0), image_id=image_id)
-                    clip_feature_map = clip_extractor.generate_feature_map(image, masks.squeeze(1), class_indices, CLASSES)
-   
-                # clip_feature_map = clip_extractor.generate_feature_map(image, masks.squeeze(1), class_indices, CLASSES)
-                feats = torch.nn.functional.normalize(torch.tensor(clip_feature_map, device = dev), dim=-1)
-                image_id+=1
-
-            # Backproject features onto gaussians
-            output_for_grad, _, meta = rasterization(
-                means, 
-                quats, 
-                scales, 
-                opacities, 
-                colors_feats, 
-                viewmat[None], 
-                K[None], 
-                width, 
-                height)
-            
-            target = (output_for_grad[0].to(device) * feats).sum()
-            target.backward()
-            colors_feats_copy = colors_feats.grad.clone()
-            colors_feats.grad.zero_()
-
-            output_for_grad, _, meta = rasterization(
-                means,
-                quats,
-                scales,
-                opacities,
-                colors_feats_0,
-                viewmat[None],
-                K[None],
-                width=width,
-                height=height,
-            )
-
-            target_0 = (output_for_grad[0]).sum()
-            target_0.to(device)
-            
-            target_0.backward()
-
-            gaussian_features += colors_feats_copy
-            gaussian_denoms += colors_feats_0.grad[:, 0]
-            colors_feats_0.grad.zero_()
-
-            del viewmat, meta, _, output, feats, output_for_grad, colors_feats_copy, target, target_0
-            torch.cuda.empty_cache()
-            
-            # Normalize and handle NaNs
-    gaussian_features = gaussian_features / gaussian_denoms[..., None]
-    gaussian_features = gaussian_features / gaussian_features.norm(dim=-1, keepdim=True)
-    
-    gaussian_features[torch.isnan(gaussian_features)] = 0
-    return gaussian_features
-
-
-
 def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_path, batch_count=1, use_cpu=False):
     device = "cpu" if use_cpu else "cuda"
 
-    # detector = ObjectDetector()
     yolo_model = YOLO('yolov12x.pt')
     segmenter = SAMSegmenter(sam_checkpoint)
     clip_extractor = CLIPFeatureExtractor(clip_embeddings_path)
@@ -702,12 +561,9 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
     colors_feats_0 = torch.zeros(colors.shape[0], 3, device=colors.device, requires_grad=True)
 
     slam_positions = splats["slam_positions"]
-    # images = sorted(colmap_project.images.values(), key=lambda x: x.name)
-    # batch_size = max(1, len(images) // batch_count) if batch_count > 0 else 1
+    
     image_id = 0
     for cam in tqdm(splats["slam_positions"], desc="Feature backprojection"):
-        # batch = images[batch_start:batch_start + batch_size]
-        # for image in batch:
             viewmat = get_viewmat_position_and_rotation(cam["position"], cam["rotation"])
             width = int(K[0, 2] * 2)
             height = int(K[1, 2] * 2)
@@ -746,7 +602,7 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
                 segmenter.set_image(image_np)
                 masks = segmenter.segment_objects(bboxes)
                 print(masks.shape)
-                # sys.exit()
+            
                 # Visualizer.plot_segmentation(image_np, masks.squeeze(1))
                 # Visualizer.show_binary_mask(masks[0].squeeze(0))
 
@@ -815,6 +671,7 @@ def main(
     json_directory: str = "/home/siddharth/siddharth/thesis/RTG-SLAM/output/dataset/Replica/office0/cameras.json",  # camera json file
     checkpoint: str = "/home/siddharth/siddharth/thesis/RTG-SLAM/output/dataset/Replica/office0/save_model/frame_2000/iter_1139_stable.pth",  # checkpoint path, can generate from original 3DGS repo
     results_dir: str = "/home/siddharth/siddharth/thesis/my_seg_yolo/output/replica/office0",  # output path
+    
     sam_checkpoint: str = "sam_vit_h_4b8939.pth",
     clip_embedding_path: str = "clip_coco_embeddings_hf.npy",
     rasterizer: Literal[
@@ -844,7 +701,7 @@ def main(
     features = create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embedding_path)
 
     print(features.shape)
-    torch.save(features, f"{results_dir}/features_detr.pt")
+    torch.save(features, f"{results_dir}/features.pt")
 
 if __name__ == "__main__":
     tyro.cli(main)
