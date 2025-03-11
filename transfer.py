@@ -32,7 +32,6 @@ class EncoderDecoder(nn.Module):
         y = x @ self.decoder
         return x, y
 
-
 encoder_decoder = EncoderDecoder().to("cuda")
 encoder_decoder.load_state_dict(torch.load("./encoder_decoder.ckpt"))
 
@@ -109,7 +108,9 @@ class Visualizer:
 
         for mask in masks:
             # Ensure the mask is a NumPy array
-            mask = mask.cpu().numpy()  # Convert tensor to NumPy array (if it's on GPU, use .cpu())
+            if isinstance(mask, torch.Tensor):
+                mask = mask.cpu().numpy()
+            # mask = mask.cpu().numpy()  # Convert tensor to NumPy array (if it's on GPU, use .cpu())
             mask = mask.astype(np.uint8) * 255  # Convert to uint8 and scale to 255
             
             if np.any(mask > 0):  # Only process non-empty masks
@@ -128,7 +129,7 @@ class Visualizer:
             return
         
         # Move tensor to CPU if it's on GPU and convert to numpy array
-        if mask.is_cuda:
+        if isinstance(mask, torch.Tensor):
             mask = mask.cpu().numpy()  # Move to CPU and convert to numpy
 
         plt.figure(figsize=(6, 6))
@@ -327,16 +328,18 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
                 detections = results[0].boxes
                 class_indices = detections.cls.int().tolist()
                 bboxes =detections.xyxy.cpu().numpy()
-                # print("YOLO Detected Classes:", class_indices)
 
+                print("YOLO Detected Classes:", class_indices)
+                labels = [class_names[i] for i in class_indices]
+                print(labels)
                 # Use SAM to get masks
                 segmenter.set_image(image_np)
                 masks = segmenter.segment_objects(bboxes)
 
                 # print(masks.shape)
                 # # sys.exit()
-                # Visualizer.plot_segmentation(image_np, masks.squeeze(1))
-                # Visualizer.show_binary_mask(masks[0].squeeze(0))
+                Visualizer.plot_segmentation(image_np, masks.squeeze(1))
+                Visualizer.show_binary_mask(masks[0].squeeze(0))
 
                 if isinstance(masks, np.ndarray):
                     masks = torch.tensor(masks)  # Convert to PyTorch tensor
@@ -399,9 +402,9 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
     return gaussian_features
 
 def main(
-    data_dir: str = "/home/open/SKV_Mid_Rv/gaussian-splatting/data/outside_IDR_obj_track",  # colmap path
-    checkpoint: str = "/home/open/SKV_Mid_Rv/gaussian-splatting/output/out_side_idr_mehul_track/chkpnt7000.pth",  # checkpoint path, can generate from original 3DGS repo
-    results_dir: str = "./results/idr_out",
+    data_dir: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/ramen/ramen/",  # colmap path
+    checkpoint: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/ramen/ramen/chkpnt30000.pth",  # checkpoint path, can generate from original 3DGS repo
+    results_dir: str = "./results/ramen",
 
     # data_dir: str = "/home/siddharth/siddharth/thesis/3dgs-gradient-backprojection/data/garden",  # colmap path
     # checkpoint: str = "/home/siddharth/siddharth/thesis/3dgs-gradient-backprojection/data/garden/ckpts/ckpt_29999_rank0.pt",  # checkpoint path, can generate from original 3DGS repo
@@ -414,7 +417,7 @@ def main(
     ] = "inria",  # Original or GSplat for checkpoints
     data_factor: int = 4,
     embed_dim: int=16,
-    compress: bool=True,
+    compress: bool=False,
 ):
 
     if not torch.cuda.is_available():
