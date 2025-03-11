@@ -170,9 +170,9 @@ def get_mask3d_yolo(splats, gaussian_features, prompt, neg_prompt, threshold=Non
     text_feat = clip_model.get_text_features(**inputs)  # Shape: [num_queries, 512]
     text_feat_norm = torch.nn.functional.normalize(text_feat, p=2, dim=1)
 
-    # Dim redn
-    text_feat_compressed = text_feat_norm@encoder_decoder.encoder # 512 -> 16
-    text_feat = torch.nn.functional.normalize(text_feat_compressed,p=2,dim=1)
+    # # Dim redn
+    # text_feat_compressed = text_feat_norm@encoder_decoder.encoder # 512 -> 16
+    # text_feat = torch.nn.functional.normalize(text_feat_compressed,p=2,dim=1)
 
     # Compute similarity scores
     score = gaussian_features @ text_feat.T
@@ -276,16 +276,16 @@ def render_to_gif(
         cv2.destroyAllWindows()
 
 def main(
-    data_dir: str = "/home/open/SKV_Mid_Rv/gaussian-splatting/data/outside_IDR_obj_track",  # colmap path
-    checkpoint: str = "/home/open/SKV_Mid_Rv/gaussian-splatting/output/out_side_idr_mehul_track/chkpnt7000.pth",  # checkpoint path, can generate from original 3DGS repo
-    results_dir: str = "./results/idr_out",
+    data_dir: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/ramen/ramen/",  # colmap path
+    checkpoint: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/ramen/ramen/chkpnt30000.pth",  # checkpoint path, can generate from original 3DGS repo
+    results_dir: str = "./results/ramen",
     # data_dir: str = "/home/siddharth/siddharth/thesis/3dgs-gradient-backprojection/data/garden",  # colmap path
     # checkpoint: str = "/home/siddharth/siddharth/thesis/3dgs-gradient-backprojection/data/garden/ckpts/ckpt_29999_rank0.pt",  # checkpoint path, can generate from original 3DGS repo
     # results_dir: str = "./results/garden",  # output
     rasterizer: Literal[
     "inria", "gsplat"
     ] = "inria",  # Original or gsplat for checkpoints
-    prompt: str = "person", # the one to be extracted or deleted
+    prompt: str = "cup", # the one to be extracted or deleted
     data_factor: int = 4,
     show_visual_feedback: bool = True,
 ):
