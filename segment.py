@@ -258,7 +258,6 @@ def render_to_gif(
             alphas = alphas[0].detach().cpu().numpy()
             frame = frame * alphas + checkerboard * (1 - alphas)
             frame = np.clip(frame, 0, 255).astype(np.uint8)
-
          
         if use_white_background:
             white_bg = np.ones_like(frame) * 255  # Create a white background
@@ -292,7 +291,7 @@ def main(
 
      # # Compute negative classes dynamically
     if prompt in class_names.values():
-        neg_classes = [name for name in class_names.values() if name != prompt] + ["others"]
+        neg_classes = ["others"] + [name for name in class_names.values() if name != prompt] 
     else:
         neg_classes = ["others"]
 
