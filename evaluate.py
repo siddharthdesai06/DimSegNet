@@ -260,7 +260,7 @@ def load_checkpoint(
     # sys.exit()
     return splats
 
-def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_path, embed_dim=512, compress = False, batch_count=1, use_cpu=False):
+def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_path, embed_dim=512, compress = False, test_images={},batch_count=1, use_cpu=False):
     device = "cpu" if use_cpu else "cuda"
 
     if compress:
@@ -301,10 +301,12 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
     images = sorted(colmap_project.images.values(), key=lambda x: x.name)
     image_id = 0
     for image in tqdm(images, desc="Feature backprojection (images)"):
+            if image.name in test_images:
+                print(f"Skipping {image.name} as it is test image")
+                continue
             viewmat = get_viewmat_from_colmap_image(image)
             width = int(K[0, 2] * 2)
             height = int(K[1, 2] * 2)
-            
             with torch.no_grad():
                 output, _, meta = rasterization(
                     means, 
@@ -332,6 +334,7 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
                 print("YOLO Detected Classes:", class_indices)
                 labels = [class_names[i] for i in class_indices]
                 print(labels)
+
                 # Use SAM to get masks
                 segmenter.set_image(image_np)
                 masks = segmenter.segment_objects(bboxes)
@@ -402,8 +405,8 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
     return gaussian_features
 
 def main(
-    data_dir: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/teatime/teatime/",  # colmap path
-    checkpoint: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/teatime/teatime/chkpnt30000.pth",  # checkpoint path, can generate from original 3DGS repo
+    data_dir: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/teatime/",  # colmap path
+    checkpoint: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/teatime/chkpnt30000.pth",  # checkpoint path, can generate from original 3DGS repo
     results_dir: str = "./results/teatime",
 
     # data_dir: str = "/home/siddharth/siddharth/thesis/3dgs-gradient-backprojection/data/garden",  # colmap path
@@ -418,8 +421,9 @@ def main(
     data_factor: int = 4,
     embed_dim: int=16,
     compress: bool=False,
+   
 ):
-
+    test_images = {"test_0.jpg", "test_1.jpg", "test_2.jpg"} 
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is required for this demo")
 
@@ -436,7 +440,7 @@ def main(
     # splats = splats_optimized
     # features = create_feature_field_detr_sam_clip(splats, sam_checkpoint, clip_embedding_path)
 
-    features = create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embedding_path,embed_dim,compress)
+    features = create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embedding_path,embed_dim,compress, test_images)
 
     print("features_size", features.shape)
     
