@@ -14,7 +14,7 @@ from transformers import CLIPProcessor, CLIPModel
 import matplotlib.pyplot as plt
 from PIL import Image
 import sys
-
+import torch.nn as nn
 
 class EncoderDecoder(nn.Module):
     def __init__(self):
@@ -213,7 +213,9 @@ def apply_mask3d(splats, mask3d, mask3d_inverted):
 
 
 def save_output_as_image(output, file_name="output_image.png"):
-    output = output.permute(1, 2, 0)  # Change from (C, H, W) to (H, W, C)
+    print(output.shape)
+    # sys.exit()
+    # output = output.permute(1, 2, 0)  # Change from (C, H, W) to (H, W, C)
     output = output.cpu().detach().numpy()  # Convert tensor to NumPy array
     
     # If the output has values in the range [0, 1], scale it to [0, 255]
@@ -254,8 +256,7 @@ def get_2d_mask(splats, test_images, no_sh=False):
             height=K[1, 2] * 2,
             sh_degree=3 if not no_sh else None,
         )
-        save_output_as_image(output, f"{image.name}.png")
-
+        save_output_as_image(output[0], f"{image.name}")
 
 def render_to_gif(
     output_path: str,
@@ -318,16 +319,16 @@ def render_to_gif(
         cv2.destroyAllWindows()
 
 def main(
-    data_dir: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/ramen/ramen/",  # colmap path
-    checkpoint: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/ramen/ramen/chkpnt30000.pth",  # checkpoint path, can generate from original 3DGS repo
-    results_dir: str = "./results/ramen",
+    data_dir: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/teatime/",  # colmap path
+    checkpoint: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/teatime/chkpnt30000.pth",  # checkpoint path, can generate from original 3DGS repo
+    results_dir: str = "./results/teatime",
     # data_dir: str = "/home/siddharth/siddharth/thesis/3dgs-gradient-backprojection/data/garden",  # colmap path
     # checkpoint: str = "/home/siddharth/siddharth/thesis/3dgs-gradient-backprojection/data/garden/ckpts/ckpt_29999_rank0.pt",  # checkpoint path, can generate from original 3DGS repo
     # results_dir: str = "./results/garden",  # output
     rasterizer: Literal[
     "inria", "gsplat"
     ] = "inria",  # Original or gsplat for checkpoints
-    prompt: str = "cup", # the one to be extracted or deleted
+    prompt: str = "teddy bear", # the one to be extracted or deleted
     data_factor: int = 4,
     show_visual_feedback: bool = True,
 ):
