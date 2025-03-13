@@ -14,9 +14,6 @@ from transformers import CLIPProcessor, CLIPModel
 import matplotlib.pyplot as plt
 from PIL import Image
 import sys
-import torch.nn as nn
-
-
 
 
 class EncoderDecoder(nn.Module):
@@ -155,14 +152,7 @@ def load_clip_feature_map(feature_path):
     clip_feature_map = torch.tensor(np.load(feature_path), dtype=torch.float32)  # Load h×w×512 tensor
     print(f"Loaded feature map from {feature_path}, shape: {clip_feature_map.shape}")
     return clip_feature_map
-
-
-
-def get_mask2d_yolo(splats, gaussian_features, prompt, neg_prompt, test_images, threshold=None):
-    clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to("cuda")
-    clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
     
-
 def get_mask3d_yolo(splats, gaussian_features, prompt, neg_prompt, threshold=None):
     # Load CLIP model and processor
 
@@ -220,6 +210,52 @@ def apply_mask3d(splats, mask3d, mask3d_inverted):
     masked["features_rest"][~mask3d] = 0
 
     return extracted, deleted, masked
+
+
+def save_output_as_image(output, file_name="output_image.png"):
+    output = output.permute(1, 2, 0)  # Change from (C, H, W) to (H, W, C)
+    output = output.cpu().detach().numpy()  # Convert tensor to NumPy array
+    
+    # If the output has values in the range [0, 1], scale it to [0, 255]
+    if output.max() <= 1.0:
+        output = (output * 255).astype(np.uint8)
+    else:
+        output = output.astype(np.uint8)
+
+    # Create an Image object using PIL and save it
+    image = Image.fromarray(output)
+    image.save(file_name)
+    print(f"Image saved as {file_name}")
+
+def get_2d_mask(splats, test_images, no_sh=False):
+    means = splats["means"]
+    colors_dc = splats["features_dc"]
+    colors_rest = splats["features_rest"]
+    colors = torch.cat([colors_dc, colors_rest], dim=1)
+    opacities = torch.sigmoid(splats["opacity"])
+    scales = torch.exp(splats["scaling"])
+    quats = splats["rotation"]
+    K = splats["camera_matrix"]
+
+    for image in sorted(splats["colmap_project"].images.values(), key=lambda x: x.name):
+        if image.name not in test_images:
+            print(f"Skipping {image.name} as it is train image")
+            continue
+        viewmat = get_viewmat_from_colmap_image(image)
+        output, alphas, meta = rasterization(
+            means,
+            quats,
+            scales,
+            opacities,
+            colors,
+            viewmat[None],
+            K[None],
+            width=K[0, 2] * 2,
+            height=K[1, 2] * 2,
+            sh_degree=3 if not no_sh else None,
+        )
+        save_output_as_image(output, f"{image.name}.png")
+
 
 def render_to_gif(
     output_path: str,
@@ -323,11 +359,13 @@ def main(
 
     features = torch.load(f"{results_dir}/features.pt")
     print("features shape================>>",features.shape)
-    mask3d, mask3d_inv = get_mask3d_yolo(splats, features,prompt, neg_prompt, test_images)
-    mask3d, mask3d_inv = get_mask3d_yolo(splats, features,prompt, neg_prompt, test_images)
+    # mask3d, mask3d_inv = get_mask3d_yolo(splats, features,prompt, neg_prompt, test_images)
+    mask3d, mask3d_inv = get_mask3d_yolo(splats, features,prompt, neg_prompt)
     
     extracted, deleted, masked = apply_mask3d(splats, mask3d, mask3d_inv)
-   
+    
+    get_2d_mask(extracted, test_images)
+
     render_to_gif(
         f"{results_dir}/extracted.gif",
         extracted,
