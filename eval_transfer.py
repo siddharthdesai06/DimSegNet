@@ -18,6 +18,8 @@ from typing import Literal
 import tyro
 from ultralytics import YOLO
 import torch.nn as nn
+import random
+from matplotlib import patches
 
 dev = "cuda"
 
@@ -96,9 +98,60 @@ class CLIPFeatureExtractor:
 
         return feature_map
 
-    
 class Visualizer:
+
     @staticmethod
+    def plot_yolo_and_segmentation(image, bboxes, masks, class_names, save_dir="yolo_output", image_id=0):
+        """
+        This function overlays YOLO detection bounding boxes and SAM segmentation masks on the input image.
+
+        :param image: Input image (in RGB format).
+        :param detections: YOLO detections output containing bounding boxes and class info.
+        :param masks: Segmentation masks output from SAM.
+        :param class_names: A dictionary mapping class indices to class names (e.g., COCO classes).
+        :param save_dir: Directory to save the results.
+        :param image_id: An identifier for saving the image.
+        """
+        os.makedirs(save_dir, exist_ok=True)  # Create directory if not exists
+        save_path = os.path.join(save_dir, f"image_{image_id}.png")
+
+        fig, ax = plt.subplots(figsize=(12, 8))
+        ax.imshow(image)
+        # Extract bounding boxes
+        
+
+        # Draw bounding boxes for YOLO detections
+        colors = [[random.randint(0, 255) for _ in range(3)] for _ in range(len(bboxes))]
+        for i, detection in enumerate(bboxes):
+            x1, y1, x2, y2 = detection
+            # class_idx = int(detections.cls[i].item())
+            class_name = class_names[i]
+            color = tuple([c / 255.0 for c in colors[i]])
+
+            # Draw the bounding box
+            rect = patches.Rectangle((x1, y1), x2 - x1, y2 - y1, linewidth=3, edgecolor=color, facecolor='none')
+            ax.add_patch(rect)
+
+            # Label the class name
+            ax.text(x1, y1 - 10, class_name, color=color, fontsize=12, bbox=dict(facecolor='white', alpha=0.7))
+
+        # Overlay the segmentation masks on the image
+        # for mask in masks:
+        #     mask = mask.cpu().numpy().astype(np.uint8) * 255  # Ensure the mask is in the correct format
+        #     mask_color = np.random.randint(0, 255, 3)  # Random color for each mask
+        #     mask = np.expand_dims(mask, axis=-1)
+
+        #     # Apply the mask to the image
+        #     masked_image = np.where(mask == 255, mask_color, image)
+        #     ax.imshow(masked_image, alpha=0.5)  # Show the masked image with transparency
+
+        ax.axis('off')
+        plt.tight_layout()
+        plt.savefig(save_path, bbox_inches='tight')
+        plt.close(fig)  # Ensure no display
+
+        print(f"Saved visualization to {save_path}")
+
     def plot_segmentation(image, masks, save_dir="segmentations", image_id=0):
         os.makedirs(save_dir, exist_ok=True)  # Create directory if not exists
         save_path = os.path.join(save_dir, f"image{image_id}.png")
@@ -327,13 +380,14 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
                 image = Image.fromarray((image_np * 255).astype(np.uint8)) 
 
                 results = yolo_model(image, verbose=False)
+
                 detections = results[0].boxes
                 class_indices = detections.cls.int().tolist()
                 bboxes =detections.xyxy.cpu().numpy()
 
-                print("YOLO Detected Classes:", class_indices)
+                # print("YOLO Detected Classes:", class_indices)
                 labels = [class_names[i] for i in class_indices]
-                print(labels)
+                # print(labels)
 
                 # Use SAM to get masks
                 segmenter.set_image(image_np)
@@ -341,8 +395,10 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
 
                 # print(masks.shape)
                 # # sys.exit()
-                Visualizer.plot_segmentation(image_np, masks.squeeze(1))
-                Visualizer.show_binary_mask(masks[0].squeeze(0))
+                Visualizer.plot_yolo_and_segmentation(image, bboxes, masks, labels, save_dir="yolo_op", image_id=image_id)
+
+                # Visualizer.plot_segmentation(image_np, masks.squeeze(1))
+                # Visualizer.show_binary_mask(masks[0].squeeze(0))
 
                 if isinstance(masks, np.ndarray):
                     masks = torch.tensor(masks)  # Convert to PyTorch tensor
