@@ -87,9 +87,9 @@ class CLIPFeatureExtractor:
         
         # Initialize the feature map with the "others" embedding
         feature_map = others_embedding.repeat(H * W, axis=0).reshape(H, W, 512)
-        print("class_indices",len(class_indices))
-        print("masks_shape",masks.shape)
-        sys.exit()
+        # print("class_indices",len(class_indices))
+        # print("masks_shape",masks.shape)
+        # sys.exit()
         # Apply the class-specific embeddings for each mask
         for i, mask in enumerate(masks):
             class_idx = class_indices[i]
@@ -316,81 +316,60 @@ def load_checkpoint(
     return splats
 
 def prune_by_gradients(splats):
-    
+    colmap_project = splats["colmap_project"]
+    frame_idx = 0
     means = splats["means"]
+    colors_dc = splats["features_dc"]
+    colors_rest = splats["features_rest"]
+    colors = torch.cat([colors_dc, colors_rest], dim=1)
+    opacities = torch.sigmoid(splats["opacity"])
+    scales = torch.exp(splats["scaling"])
     quats = splats["rotation"]
-    features_dc = splats["features_dc"]
-    features_rest = splats["features_rest"]
-    opacities = splats["opacity"]
-    scales = splats["scaling"]
-
-    # print("means",means.shape)
-    # print("quats",quats.shape)
-    # print("features_dc",features_dc.shape)
-    # print("features_rest",features_rest.shape)
-    # print("opacities",opacities.shape)
-    # print("scales",scales.shape)
-    
-    colors = torch.cat([features_dc, features_rest], dim=1)
-    
-    # print("features_dc_later",features_dc.shape)
-    # print("features_rest_later",features_rest.shape)
-    # print("colors_later",colors.shape)
-
-    opacities = torch.sigmoid(opacities)
-    scales = torch.exp(scales)
-    
+    # print("colors_dc", colors_dc.shape)
+    # print("colors_rest", colors_rest.shape)
+    # print("colors", colors.shape)
+    # sys.exit()
     K = splats["camera_matrix"]
-    slam_positions = splats["slam_positions"]
     colors.requires_grad = True
     gaussian_grads = torch.zeros(colors.shape[0], device=colors.device)
-    
-    for cam in slam_positions:
-        viewmat = get_viewmat_position_and_rotation(cam["position"], cam["rotation"])
-        
-        output,_,_=rasterization(
+    for image in sorted(colmap_project.images.values(), key=lambda x: x.name):
+        viewmat = get_viewmat_from_colmap_image(image)
+        output, _, _ = rasterization(
             means,
             quats,
             scales,
             opacities,
-            colors[:,0,:],
-            viewmats = viewmat[None],
+            colors[:, 0, :],
+            viewmats=viewmat[None],
             Ks=K[None],
-            width = K[0,2]*2,
-            height=K[1,2]*2,
-            backgrounds=torch.ones((1,3)).to(colors.device),
+            # sh_degree=3,
+            width=K[0, 2] * 2,
+            height=K[1, 2] * 2,
         )
-
-        output_cv = torch_to_cv(output[0])
-        cv2.imshow("output", output_cv)
-        cv2.waitKey(100)
-        
-        #Compute pseudo loss and backpropagate
+        frame_idx += 1
         pseudo_loss = ((output.detach() + 1 - output) ** 2).mean()
         pseudo_loss.backward()
+        # print(colors.grad.shape)
         gaussian_grads += (colors.grad[:, 0]).norm(dim=[1])
         colors.grad.zero_()
-    
+
     mask = gaussian_grads > 0
     print("Total splats", len(gaussian_grads))
-    print("Pruned", (~mask).sum().item(), "splats")
-    print("Remaining", mask.sum().item(), "splats")
-    
-    
-    # Apply the mask to prune the splats
-    pruned_splats = splats.copy()
-    pruned_splats["means"] = means[mask]
-    pruned_splats["features_dc"] = features_dc[mask]
-    pruned_splats["features_rest"] = features_rest[mask]
-    pruned_splats["scaling"] = scales[mask]
-    pruned_splats["rotation"] = quats[mask]
-    pruned_splats["opacity"] = opacities[mask]
-    
-    return pruned_splats
+    print("Pruned", (~mask).sum(), "splats")
+    print("Remaining", mask.sum(), "splats")
+    splats = splats.copy()
+    splats["means"] = splats["means"][mask]
+    splats["features_dc"] = splats["features_dc"][mask]
+    splats["features_rest"] = splats["features_rest"][mask]
+    splats["scaling"] = splats["scaling"][mask]
+    splats["rotation"] = splats["rotation"][mask]
+    splats["opacity"] = splats["opacity"][mask]
+    return splats
+
 
 def test_proper_pruning(splats, splats_after_pruning):
-    # colmap_project = splats["colmap_project"]
-    # frame_idx = 0
+    colmap_project = splats["colmap_project"]
+    frame_idx = 0
     means = splats["means"]
     colors_dc = splats["features_dc"]
     colors_rest = splats["features_rest"]
@@ -408,11 +387,10 @@ def test_proper_pruning(splats, splats_after_pruning):
     quats_pruned = splats_after_pruning["rotation"]
 
     K = splats["camera_matrix"]
-    slam_positions = splats["slam_positions"]
     total_error = 0
     max_pixel_error = 0
-    for cam in slam_positions:
-        viewmat = get_viewmat_position_and_rotation(cam["position"], cam["rotation"])
+    for image in sorted(colmap_project.images.values(), key=lambda x: x.name):
+        viewmat = get_viewmat_from_colmap_image(image)
         output, _, _ = rasterization(
             means,
             quats,
@@ -450,9 +428,9 @@ def test_proper_pruning(splats, splats_after_pruning):
         * 100
     )
 
-    # assert max_pixel_error < 1 / (
-    #     255 * 2
-    # ), "Max pixel error should be less than 1/(255*2), safety margin"
+    assert max_pixel_error < 1 / (
+        255 * 2
+    ), "Max pixel error should be less than 1/(255*2), safety margin"
     print(
         "Report {}% pruned, max pixel error = {}, total pixel error = {}".format(
             percentage_pruned, max_pixel_error, total_error
