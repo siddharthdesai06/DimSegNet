@@ -152,7 +152,130 @@ def load_clip_feature_map(feature_path):
     clip_feature_map = torch.tensor(np.load(feature_path), dtype=torch.float32)  # Load h×w×512 tensor
     print(f"Loaded feature map from {feature_path}, shape: {clip_feature_map.shape}")
     return clip_feature_map
-    
+
+def prune_by_gradients(splats):
+    colmap_project = splats["colmap_project"]
+    frame_idx = 0
+    means = splats["means"]
+    colors_dc = splats["features_dc"]
+    colors_rest = splats["features_rest"]
+    colors = torch.cat([colors_dc, colors_rest], dim=1)
+    opacities = torch.sigmoid(splats["opacity"])
+    scales = torch.exp(splats["scaling"])
+    quats = splats["rotation"]
+    # print("colors_dc", colors_dc.shape)
+    # print("colors_rest", colors_rest.shape)
+    # print("colors", colors.shape)
+    # sys.exit()
+    K = splats["camera_matrix"]
+    colors.requires_grad = True
+    gaussian_grads = torch.zeros(colors.shape[0], device=colors.device)
+    for image in sorted(colmap_project.images.values(), key=lambda x: x.name):
+        viewmat = get_viewmat_from_colmap_image(image)
+        output, _, _ = rasterization(
+            means,
+            quats,
+            scales,
+            opacities,
+            colors[:, 0, :],
+            viewmats=viewmat[None],
+            Ks=K[None],
+            # sh_degree=3,
+            width=K[0, 2] * 2,
+            height=K[1, 2] * 2,
+        )
+        frame_idx += 1
+        pseudo_loss = ((output.detach() + 1 - output) ** 2).mean()
+        pseudo_loss.backward()
+        # print(colors.grad.shape)
+        gaussian_grads += (colors.grad[:, 0]).norm(dim=[1])
+        colors.grad.zero_()
+
+    mask = gaussian_grads > 0
+    print("Total splats", len(gaussian_grads))
+    print("Pruned", (~mask).sum(), "splats")
+    print("Remaining", mask.sum(), "splats")
+    splats = splats.copy()
+    splats["means"] = splats["means"][mask]
+    splats["features_dc"] = splats["features_dc"][mask]
+    splats["features_rest"] = splats["features_rest"][mask]
+    splats["scaling"] = splats["scaling"][mask]
+    splats["rotation"] = splats["rotation"][mask]
+    splats["opacity"] = splats["opacity"][mask]
+    return splats
+
+
+def test_proper_pruning(splats, splats_after_pruning):
+    colmap_project = splats["colmap_project"]
+    frame_idx = 0
+    means = splats["means"]
+    colors_dc = splats["features_dc"]
+    colors_rest = splats["features_rest"]
+    colors = torch.cat([colors_dc, colors_rest], dim=1)
+    opacities = torch.sigmoid(splats["opacity"])
+    scales = torch.exp(splats["scaling"])
+    quats = splats["rotation"]
+
+    means_pruned = splats_after_pruning["means"]
+    colors_dc_pruned = splats_after_pruning["features_dc"]
+    colors_rest_pruned = splats_after_pruning["features_rest"]
+    colors_pruned = torch.cat([colors_dc_pruned, colors_rest_pruned], dim=1)
+    opacities_pruned = torch.sigmoid(splats_after_pruning["opacity"])
+    scales_pruned = torch.exp(splats_after_pruning["scaling"])
+    quats_pruned = splats_after_pruning["rotation"]
+
+    K = splats["camera_matrix"]
+    total_error = 0
+    max_pixel_error = 0
+    for image in sorted(colmap_project.images.values(), key=lambda x: x.name):
+        viewmat = get_viewmat_from_colmap_image(image)
+        output, _, _ = rasterization(
+            means,
+            quats,
+            scales,
+            opacities,
+            colors,
+            viewmats=viewmat[None],
+            Ks=K[None],
+            sh_degree=3,
+            width=K[0, 2] * 2,
+            height=K[1, 2] * 2,
+        )
+
+        output_pruned, _, _ = rasterization(
+            means_pruned,
+            quats_pruned,
+            scales_pruned,
+            opacities_pruned,
+            colors_pruned,
+            viewmats=viewmat[None],
+            Ks=K[None],
+            sh_degree=3,
+            width=K[0, 2] * 2,
+            height=K[1, 2] * 2,
+        )
+
+        total_error += torch.abs((output - output_pruned)).sum()
+        max_pixel_error = max(
+            max_pixel_error, torch.abs((output - output_pruned)).max()
+        )
+
+    percentage_pruned = (
+        (len(splats["means"]) - len(splats_after_pruning["means"]))
+        / len(splats["means"])
+        * 100
+    )
+
+    assert max_pixel_error < 1 / (
+        255 * 2
+    ), "Max pixel error should be less than 1/(255*2), safety margin"
+    print(
+        "Report {}% pruned, max pixel error = {}, total pixel error = {}".format(
+            percentage_pruned, max_pixel_error, total_error
+        )
+    )
+
+
 def get_mask3d_yolo(splats, gaussian_features, prompt, neg_prompt, threshold=None):
     # Load CLIP model and processor
 
@@ -212,22 +335,35 @@ def apply_mask3d(splats, mask3d, mask3d_inverted):
     return extracted, deleted, masked
 
 
-def save_output_as_image(output, file_name="output_image.png"):
-    print(output.shape)
-    # sys.exit()
+def save_output_as_image(alpha, file_name="output_image.png"):
     # output = output.permute(1, 2, 0)  # Change from (C, H, W) to (H, W, C)
-    output = output.cpu().detach().numpy()  # Convert tensor to NumPy array
     
-    # If the output has values in the range [0, 1], scale it to [0, 255]
-    if output.max() <= 1.0:
-        output = (output * 255).astype(np.uint8)
-    else:
-        output = output.astype(np.uint8)
+    print(alpha.shape)
+    # if alpha.ndim == 3:
+    alpha = alpha.squeeze(2) 
+    print(alpha.shape)
+    # Convert tensor to NumPy
+    alpha = alpha.cpu().detach().numpy()
 
-    # Create an Image object using PIL and save it
-    image = Image.fromarray(output)
-    image.save(file_name)
-    print(f"Image saved as {file_name}")
+    # Binarize the alpha channel
+    mask = (alpha > 0.5).astype(np.uint8) * 255  # Convert to 0-255 range
+
+    # Save as image
+    mask_image = Image.fromarray(mask, mode="L")  # "L" mode for grayscale
+    mask_image.save(file_name)
+    print(f"Binary mask saved as {file_name}")
+    # output = output.cpu().detach().numpy()  # Convert tensor to NumPy array
+    
+    # # If the output has values in the range [0, 1], scale it to [0, 255]
+    # if output.max() <= 1.0:
+    #     output = (output * 255).astype(np.uint8)
+    # else:
+    #     output = output.astype(np.uint8)
+
+    # # Create an Image object using PIL and save it
+    # image = Image.fromarray(output)
+    # image.save(file_name)
+    # print(f"Image saved as {file_name}")
 
 def get_2d_mask(splats, test_images, no_sh=False):
     means = splats["means"]
@@ -256,7 +392,10 @@ def get_2d_mask(splats, test_images, no_sh=False):
             height=K[1, 2] * 2,
             sh_degree=3 if not no_sh else None,
         )
-        save_output_as_image(output[0], f"{image.name}")
+
+
+        
+        save_output_as_image(alphas[0], f"{image.name}")
 
 def render_to_gif(
     output_path: str,
@@ -354,9 +493,9 @@ def main(
         checkpoint, data_dir, rasterizer=rasterizer, data_factor=data_factor
     )
 
-    # splats_optimized = prune_by_gradients(splats)
-    # test_proper_pruning(splats, splats_optimized)
-    # splats = splats_optimized
+    splats_optimized = prune_by_gradients(splats)
+    test_proper_pruning(splats, splats_optimized)
+    splats = splats_optimized
 
     features = torch.load(f"{results_dir}/features.pt")
     print("features shape================>>",features.shape)
