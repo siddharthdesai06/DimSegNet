@@ -87,7 +87,9 @@ class CLIPFeatureExtractor:
         
         # Initialize the feature map with the "others" embedding
         feature_map = others_embedding.repeat(H * W, axis=0).reshape(H, W, 512)
-
+        # print("class_indices",len(class_indices))
+        # print("masks_shape",masks.shape)
+        # sys.exit()
         # Apply the class-specific embeddings for each mask
         for i, mask in enumerate(masks):
             class_idx = class_indices[i]
@@ -313,6 +315,129 @@ def load_checkpoint(
     # sys.exit()
     return splats
 
+def prune_by_gradients(splats):
+    colmap_project = splats["colmap_project"]
+    frame_idx = 0
+    means = splats["means"]
+    colors_dc = splats["features_dc"]
+    colors_rest = splats["features_rest"]
+    colors = torch.cat([colors_dc, colors_rest], dim=1)
+    opacities = torch.sigmoid(splats["opacity"])
+    scales = torch.exp(splats["scaling"])
+    quats = splats["rotation"]
+    # print("colors_dc", colors_dc.shape)
+    # print("colors_rest", colors_rest.shape)
+    # print("colors", colors.shape)
+    # sys.exit()
+    K = splats["camera_matrix"]
+    colors.requires_grad = True
+    gaussian_grads = torch.zeros(colors.shape[0], device=colors.device)
+    for image in sorted(colmap_project.images.values(), key=lambda x: x.name):
+        viewmat = get_viewmat_from_colmap_image(image)
+        output, _, _ = rasterization(
+            means,
+            quats,
+            scales,
+            opacities,
+            colors[:, 0, :],
+            viewmats=viewmat[None],
+            Ks=K[None],
+            # sh_degree=3,
+            width=K[0, 2] * 2,
+            height=K[1, 2] * 2,
+        )
+        frame_idx += 1
+        pseudo_loss = ((output.detach() + 1 - output) ** 2).mean()
+        pseudo_loss.backward()
+        # print(colors.grad.shape)
+        gaussian_grads += (colors.grad[:, 0]).norm(dim=[1])
+        colors.grad.zero_()
+
+    mask = gaussian_grads > 0
+    print("Total splats", len(gaussian_grads))
+    print("Pruned", (~mask).sum(), "splats")
+    print("Remaining", mask.sum(), "splats")
+    splats = splats.copy()
+    splats["means"] = splats["means"][mask]
+    splats["features_dc"] = splats["features_dc"][mask]
+    splats["features_rest"] = splats["features_rest"][mask]
+    splats["scaling"] = splats["scaling"][mask]
+    splats["rotation"] = splats["rotation"][mask]
+    splats["opacity"] = splats["opacity"][mask]
+    return splats
+
+
+def test_proper_pruning(splats, splats_after_pruning):
+    colmap_project = splats["colmap_project"]
+    frame_idx = 0
+    means = splats["means"]
+    colors_dc = splats["features_dc"]
+    colors_rest = splats["features_rest"]
+    colors = torch.cat([colors_dc, colors_rest], dim=1)
+    opacities = torch.sigmoid(splats["opacity"])
+    scales = torch.exp(splats["scaling"])
+    quats = splats["rotation"]
+
+    means_pruned = splats_after_pruning["means"]
+    colors_dc_pruned = splats_after_pruning["features_dc"]
+    colors_rest_pruned = splats_after_pruning["features_rest"]
+    colors_pruned = torch.cat([colors_dc_pruned, colors_rest_pruned], dim=1)
+    opacities_pruned = torch.sigmoid(splats_after_pruning["opacity"])
+    scales_pruned = torch.exp(splats_after_pruning["scaling"])
+    quats_pruned = splats_after_pruning["rotation"]
+
+    K = splats["camera_matrix"]
+    total_error = 0
+    max_pixel_error = 0
+    for image in sorted(colmap_project.images.values(), key=lambda x: x.name):
+        viewmat = get_viewmat_from_colmap_image(image)
+        output, _, _ = rasterization(
+            means,
+            quats,
+            scales,
+            opacities,
+            colors,
+            viewmats=viewmat[None],
+            Ks=K[None],
+            sh_degree=3,
+            width=K[0, 2] * 2,
+            height=K[1, 2] * 2,
+        )
+
+        output_pruned, _, _ = rasterization(
+            means_pruned,
+            quats_pruned,
+            scales_pruned,
+            opacities_pruned,
+            colors_pruned,
+            viewmats=viewmat[None],
+            Ks=K[None],
+            sh_degree=3,
+            width=K[0, 2] * 2,
+            height=K[1, 2] * 2,
+        )
+
+        total_error += torch.abs((output - output_pruned)).sum()
+        max_pixel_error = max(
+            max_pixel_error, torch.abs((output - output_pruned)).max()
+        )
+
+    percentage_pruned = (
+        (len(splats["means"]) - len(splats_after_pruning["means"]))
+        / len(splats["means"])
+        * 100
+    )
+
+    assert max_pixel_error < 1 / (
+        255 * 2
+    ), "Max pixel error should be less than 1/(255*2), safety margin"
+    print(
+        "Report {}% pruned, max pixel error = {}, total pixel error = {}".format(
+            percentage_pruned, max_pixel_error, total_error
+        )
+    )
+
+
 def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_path, embed_dim=512, compress = False, test_images={},batch_count=1, use_cpu=False):
     device = "cpu" if use_cpu else "cuda"
 
@@ -461,9 +586,10 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
     return gaussian_features
 
 def main(
-    data_dir: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/figurines/",  # colmap path
-    checkpoint: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/figurines/chkpnt30000.pth",  # checkpoint path, can generate from original 3DGS repo
-    results_dir: str = "./results/figurines",
+    
+    data_dir: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/teatime",  # colmap path
+    checkpoint: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/teatime/chkpnt30000.pth",  # checkpoint path, can generate from original 3DGS repo
+    results_dir: str = "./results/teatime",
 
     # data_dir: str = "/home/siddharth/siddharth/thesis/3dgs-gradient-backprojection/data/garden",  # colmap path
     # checkpoint: str = "/home/siddharth/siddharth/thesis/3dgs-gradient-backprojection/data/garden/ckpts/ckpt_29999_rank0.pt",  # checkpoint path, can generate from original 3DGS repo
@@ -490,10 +616,10 @@ def main(
         checkpoint, data_dir, rasterizer=rasterizer, data_factor=data_factor
     )
 
-    # splats_optimized = prune_by_gradients(splats)
-    # print("Prunign done")
-    # test_proper_pruning(splats, splats_optimized)
-    # splats = splats_optimized
+    splats_optimized = prune_by_gradients(splats)
+    print("Prunign done")
+    test_proper_pruning(splats, splats_optimized)
+    splats = splats_optimized
     # features = create_feature_field_detr_sam_clip(splats, sam_checkpoint, clip_embedding_path)
 
     features = create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embedding_path,embed_dim,compress, test_images)
