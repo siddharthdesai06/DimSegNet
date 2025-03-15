@@ -21,6 +21,8 @@ import torch.nn as nn
 import random
 from matplotlib import patches
 
+from sklearn.decomposition import PCA
+
 dev = "cuda"
 
 class EncoderDecoder(nn.Module):
@@ -87,9 +89,7 @@ class CLIPFeatureExtractor:
         
         # Initialize the feature map with the "others" embedding
         feature_map = others_embedding.repeat(H * W, axis=0).reshape(H, W, 512)
-        print("class_indices",len(class_indices))
-        print("masks_shape",masks.shape)
-        sys.exit()
+
         # Apply the class-specific embeddings for each mask
         for i, mask in enumerate(masks):
             class_idx = class_indices[i]
@@ -315,151 +315,6 @@ def load_checkpoint(
     # sys.exit()
     return splats
 
-def prune_by_gradients(splats):
-    
-    means = splats["means"]
-    quats = splats["rotation"]
-    features_dc = splats["features_dc"]
-    features_rest = splats["features_rest"]
-    opacities = splats["opacity"]
-    scales = splats["scaling"]
-
-    # print("means",means.shape)
-    # print("quats",quats.shape)
-    # print("features_dc",features_dc.shape)
-    # print("features_rest",features_rest.shape)
-    # print("opacities",opacities.shape)
-    # print("scales",scales.shape)
-    
-    colors = torch.cat([features_dc, features_rest], dim=1)
-    
-    # print("features_dc_later",features_dc.shape)
-    # print("features_rest_later",features_rest.shape)
-    # print("colors_later",colors.shape)
-
-    opacities = torch.sigmoid(opacities)
-    scales = torch.exp(scales)
-    
-    K = splats["camera_matrix"]
-    slam_positions = splats["slam_positions"]
-    colors.requires_grad = True
-    gaussian_grads = torch.zeros(colors.shape[0], device=colors.device)
-    
-    for cam in slam_positions:
-        viewmat = get_viewmat_position_and_rotation(cam["position"], cam["rotation"])
-        
-        output,_,_=rasterization(
-            means,
-            quats,
-            scales,
-            opacities,
-            colors[:,0,:],
-            viewmats = viewmat[None],
-            Ks=K[None],
-            width = K[0,2]*2,
-            height=K[1,2]*2,
-            backgrounds=torch.ones((1,3)).to(colors.device),
-        )
-
-        output_cv = torch_to_cv(output[0])
-        cv2.imshow("output", output_cv)
-        cv2.waitKey(100)
-        
-        #Compute pseudo loss and backpropagate
-        pseudo_loss = ((output.detach() + 1 - output) ** 2).mean()
-        pseudo_loss.backward()
-        gaussian_grads += (colors.grad[:, 0]).norm(dim=[1])
-        colors.grad.zero_()
-    
-    mask = gaussian_grads > 0
-    print("Total splats", len(gaussian_grads))
-    print("Pruned", (~mask).sum().item(), "splats")
-    print("Remaining", mask.sum().item(), "splats")
-    
-    
-    # Apply the mask to prune the splats
-    pruned_splats = splats.copy()
-    pruned_splats["means"] = means[mask]
-    pruned_splats["features_dc"] = features_dc[mask]
-    pruned_splats["features_rest"] = features_rest[mask]
-    pruned_splats["scaling"] = scales[mask]
-    pruned_splats["rotation"] = quats[mask]
-    pruned_splats["opacity"] = opacities[mask]
-    
-    return pruned_splats
-
-def test_proper_pruning(splats, splats_after_pruning):
-    # colmap_project = splats["colmap_project"]
-    # frame_idx = 0
-    means = splats["means"]
-    colors_dc = splats["features_dc"]
-    colors_rest = splats["features_rest"]
-    colors = torch.cat([colors_dc, colors_rest], dim=1)
-    opacities = torch.sigmoid(splats["opacity"])
-    scales = torch.exp(splats["scaling"])
-    quats = splats["rotation"]
-
-    means_pruned = splats_after_pruning["means"]
-    colors_dc_pruned = splats_after_pruning["features_dc"]
-    colors_rest_pruned = splats_after_pruning["features_rest"]
-    colors_pruned = torch.cat([colors_dc_pruned, colors_rest_pruned], dim=1)
-    opacities_pruned = torch.sigmoid(splats_after_pruning["opacity"])
-    scales_pruned = torch.exp(splats_after_pruning["scaling"])
-    quats_pruned = splats_after_pruning["rotation"]
-
-    K = splats["camera_matrix"]
-    slam_positions = splats["slam_positions"]
-    total_error = 0
-    max_pixel_error = 0
-    for cam in slam_positions:
-        viewmat = get_viewmat_position_and_rotation(cam["position"], cam["rotation"])
-        output, _, _ = rasterization(
-            means,
-            quats,
-            scales,
-            opacities,
-            colors,
-            viewmats=viewmat[None],
-            Ks=K[None],
-            sh_degree=3,
-            width=K[0, 2] * 2,
-            height=K[1, 2] * 2,
-        )
-
-        output_pruned, _, _ = rasterization(
-            means_pruned,
-            quats_pruned,
-            scales_pruned,
-            opacities_pruned,
-            colors_pruned,
-            viewmats=viewmat[None],
-            Ks=K[None],
-            sh_degree=3,
-            width=K[0, 2] * 2,
-            height=K[1, 2] * 2,
-        )
-
-        total_error += torch.abs((output - output_pruned)).sum()
-        max_pixel_error = max(
-            max_pixel_error, torch.abs((output - output_pruned)).max()
-        )
-
-    percentage_pruned = (
-        (len(splats["means"]) - len(splats_after_pruning["means"]))
-        / len(splats["means"])
-        * 100
-    )
-
-    # assert max_pixel_error < 1 / (
-    #     255 * 2
-    # ), "Max pixel error should be less than 1/(255*2), safety margin"
-    print(
-        "Report {}% pruned, max pixel error = {}, total pixel error = {}".format(
-            percentage_pruned, max_pixel_error, total_error
-        )
-    )
-
-
 def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_path, embed_dim=512, compress = False, test_images={},batch_count=1, use_cpu=False):
     device = "cpu" if use_cpu else "cuda"
 
@@ -500,6 +355,11 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
     colmap_project = splats["colmap_project"]
     images = sorted(colmap_project.images.values(), key=lambda x: x.name)
     image_id = 0
+
+
+    pca = PCA(n_components=3)
+    first_time = True
+
     for image in tqdm(images, desc="Feature backprojection (images)"):
             if image.name in test_images:
                 print(f"Skipping {image.name} as it is test image")
@@ -561,7 +421,22 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
                     feats = feats @ encoder_decoder.encoder 
         
                 image_id+=1
-
+                # pca
+    
+            print("Final Feats shape", feats.shape)
+            feats_flattened = feats.reshape(-1, 512).detach().cpu().numpy()
+            if first_time:
+                feats_pca = pca.fit_transform(feats_flattened)
+                feats_pca_first_time = feats_pca
+                first_time = False
+            else:
+                feats_pca = pca.transform(feats_flattened)
+            feats_pca = (feats_pca - feats_pca_first_time.min(axis=0))/(feats_pca_first_time.max(axis=0) - feats_pca_first_time.min(axis=0))
+            feats_pca = np.clip(feats_pca, 0, 1)
+            feats_pca = feats_pca.reshape(height, width, 3)
+            cv2.imshow("feats_pca", (feats_pca * 255).astype(np.uint8))
+            cv2.waitKey(100)
+            # sys.exit()
             # Backproject features onto gaussians
             output_for_grad, _, meta = rasterization(
                 means, 
@@ -608,7 +483,6 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
     return gaussian_features
 
 def main(
-    
     data_dir: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/teatime",  # colmap path
     checkpoint: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/teatime/chkpnt30000.pth",  # checkpoint path, can generate from original 3DGS repo
     results_dir: str = "./results/teatime",
@@ -638,10 +512,10 @@ def main(
         checkpoint, data_dir, rasterizer=rasterizer, data_factor=data_factor
     )
 
-    splats_optimized = prune_by_gradients(splats)
-    print("Prunign done")
-    test_proper_pruning(splats, splats_optimized)
-    splats = splats_optimized
+    # splats_optimized = prune_by_gradients(splats)
+    # print("Prunign done")
+    # test_proper_pruning(splats, splats_optimized)
+    # splats = splats_optimized
     # features = create_feature_field_detr_sam_clip(splats, sam_checkpoint, clip_embedding_path)
 
     features = create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embedding_path,embed_dim,compress, test_images)
