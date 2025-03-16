@@ -8,3 +8,4 @@ eval_datasets/
 *.gif
 *.jpg
 yolo_op/
+visualizations/

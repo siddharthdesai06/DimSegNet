@@ -103,100 +103,65 @@ class CLIPFeatureExtractor:
 class Visualizer:
 
     @staticmethod
-    def plot_yolo_and_segmentation(image, bboxes, masks, class_names, save_dir="yolo_output", image_id=0):
-        """
-        This function overlays YOLO detection bounding boxes and SAM segmentation masks on the input image.
-
-        :param image: Input image (in RGB format).
-        :param detections: YOLO detections output containing bounding boxes and class info.
-        :param masks: Segmentation masks output from SAM.
-        :param class_names: A dictionary mapping class indices to class names (e.g., COCO classes).
-        :param save_dir: Directory to save the results.
-        :param image_id: An identifier for saving the image.
-        """
+    def save_yolo_op(image, bboxes, masks,class_names, save_dir="visualizations/yolo_output", image_id=0):
         os.makedirs(save_dir, exist_ok=True)  # Create directory if not exists
         save_path = os.path.join(save_dir, f"image_{image_id}.png")
 
         fig, ax = plt.subplots(figsize=(12, 8))
-        ax.imshow(image)
-        # Extract bounding boxes
-        
+        ax.imshow(image)    
 
         # Draw bounding boxes for YOLO detections
         colors = [[random.randint(0, 255) for _ in range(3)] for _ in range(len(bboxes))]
         for i, detection in enumerate(bboxes):
             x1, y1, x2, y2 = detection
-            # class_idx = int(detections.cls[i].item())
             class_name = class_names[i]
             color = tuple([c / 255.0 for c in colors[i]])
 
-            # Draw the bounding box
             rect = patches.Rectangle((x1, y1), x2 - x1, y2 - y1, linewidth=3, edgecolor=color, facecolor='none')
             ax.add_patch(rect)
 
-            # Label the class name
             ax.text(x1, y1 - 10, class_name, color=color, fontsize=12, bbox=dict(facecolor='white', alpha=0.7))
-
-        # Overlay the segmentation masks on the image
-        # for mask in masks:
-        #     mask = mask.cpu().numpy().astype(np.uint8) * 255  # Ensure the mask is in the correct format
-        #     mask_color = np.random.randint(0, 255, 3)  # Random color for each mask
-        #     mask = np.expand_dims(mask, axis=-1)
-
-        #     # Apply the mask to the image
-        #     masked_image = np.where(mask == 255, mask_color, image)
-        #     ax.imshow(masked_image, alpha=0.5)  # Show the masked image with transparency
 
         ax.axis('off')
         plt.tight_layout()
         plt.savefig(save_path, bbox_inches='tight')
         plt.close(fig)  # Ensure no display
 
-        print(f"Saved visualization to {save_path}")
+        # print(f"Saved visualization to {save_path}")
 
-    def plot_segmentation(image, masks, save_dir="segmentations", image_id=0):
+    
+    def save_sam_op(masks, save_dir="visualizations/sam_output", image_id=0):
+        os.makedirs(save_dir, exist_ok=True)  # Create directory if not exists
+
+        for i, mask in enumerate(masks):
+            # Convert mask to binary format (255 for object, 0 for background)
+            binary_mask = (mask[0].cpu().numpy() * 255).astype(np.uint8)  
+
+            # Save the binary mask as an image
+            mask_filename = os.path.join(save_dir, f"mask_{image_id}_{i}.png")
+            cv2.imwrite(mask_filename, binary_mask)
+
+            # print(f"Saved binary mask: {mask_filename}")
+
+    def save_overlayed_segmentation(image, masks, save_dir="visualizations/segmentations", image_id=0):
         os.makedirs(save_dir, exist_ok=True)  # Create directory if not exists
         save_path = os.path.join(save_dir, f"image{image_id}.png")
 
         fig, ax = plt.subplots(figsize=(16, 10))
         ax.imshow(image)
-
         for mask in masks:
-            # Ensure the mask is a NumPy array
             if isinstance(mask, torch.Tensor):
                 mask = mask.cpu().numpy()
-            # mask = mask.cpu().numpy()  # Convert tensor to NumPy array (if it's on GPU, use .cpu())
-            mask = mask.astype(np.uint8) * 255  # Convert to uint8 and scale to 255
+            mask = mask.astype(np.uint8) * 255  
             
-            if np.any(mask > 0):  # Only process non-empty masks
+            if np.any(mask > 0): 
                 contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
                 for contour in contours:
                     ax.plot(contour[:, 0, 0], contour[:, 0, 1], color=np.random.rand(3), linewidth=2)
 
         ax.axis('off')
         fig.savefig(save_path, bbox_inches='tight')
-        plt.close(fig)  # Ensure no display
-
-    @staticmethod
-    def show_binary_mask(mask, image_id=None):
-        if len(mask) == 0:
-            print("No masks found.")
-            return
-        
-        # Move tensor to CPU if it's on GPU and convert to numpy array
-        if isinstance(mask, torch.Tensor):
-            mask = mask.cpu().numpy()  # Move to CPU and convert to numpy
-
-        plt.figure(figsize=(6, 6))
-        plt.imshow(mask, cmap="gray")  # Display binary mask in black & white
-        plt.axis("off")
-        
-        # Optionally save the image (you can add a name pattern)
-        if image_id is not None:
-            save_path = f"mask_{image_id}.png"
-            plt.savefig(save_path, bbox_inches="tight")
-        
-        plt.close()  # Close the plot after saving# Ensure no display
+        plt.close(fig)  
 
 # # Configurable variables
 SAM_CHECKPOINT = "sam_vit_h_4b8939.pth"
@@ -325,10 +290,6 @@ def prune_by_gradients(splats):
     opacities = torch.sigmoid(splats["opacity"])
     scales = torch.exp(splats["scaling"])
     quats = splats["rotation"]
-    # print("colors_dc", colors_dc.shape)
-    # print("colors_rest", colors_rest.shape)
-    # print("colors", colors.shape)
-    # sys.exit()
     K = splats["camera_matrix"]
     colors.requires_grad = True
     gaussian_grads = torch.zeros(colors.shape[0], device=colors.device)
@@ -469,8 +430,8 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
     colors.requires_grad = True
     colors_0.requires_grad = True
 
-    gaussian_features = torch.zeros(colors_dc.shape[0], embed_dim, device=device)
-    gaussian_denoms = torch.ones(colors_dc.shape[0], device=device) * 1e-12
+    gaussian_features = torch.zeros(colors.shape[0], embed_dim, device=device)
+    gaussian_denoms = torch.ones(colors.shape[0], device=device) * 1e-12
     
     colors_feats = torch.zeros(colors.shape[0], embed_dim, device=colors.device, requires_grad=True)
     colors_feats_0 = torch.zeros(colors.shape[0], 3, device=colors.device, requires_grad=True)
@@ -494,8 +455,8 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
                     colors_all, 
                     viewmat[None], 
                     K[None], 
-                    width, 
-                    height, 
+                    width=width, 
+                    height=height, 
                     sh_degree=3,
                     )
                 image_tensor = output.permute(0, 3, 1, 2).to(device)
@@ -518,22 +479,23 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
                 segmenter.set_image(image_np)
                 masks = segmenter.segment_objects(bboxes)
 
-                # print(masks.shape)
-                # # sys.exit()
-                Visualizer.plot_yolo_and_segmentation(image, bboxes, masks, labels, save_dir="yolo_op", image_id=image_id)
-
-                # Visualizer.plot_segmentation(image_np, masks.squeeze(1))
-                # Visualizer.show_binary_mask(masks[0].squeeze(0))
-
                 if isinstance(masks, np.ndarray):
                     masks = torch.tensor(masks)  # Convert to PyTorch tensor
 
                 # Get CLIP feature map
                 if masks.numel() > 0:  # Ensure masks are not empt 
-                    Visualizer.plot_segmentation(image_np, masks.squeeze(1), image_id=image_id)
+                    
+                    Visualizer.save_yolo_op(image, bboxes, masks, labels, image_id=image_id)
+                    Visualizer.save_overlayed_segmentation(image_np, masks.squeeze(1), image_id=image_id)
+                    Visualizer.save_sam_op(masks=masks, image_id=image_id)
+
                     clip_feature_map = clip_extractor.generate_feature_map(image, masks.squeeze(1), class_indices, class_names)
-                feats = torch.nn.functional.normalize(torch.tensor(clip_feature_map, device = dev), dim=-1)
                 
+                print("clip_feature_map_shape",clip_feature_map.shape)
+                # 
+                feats = torch.nn.functional.normalize(torch.tensor(clip_feature_map, device = dev), dim=1)
+                print("feats_feature_map_shape",feats.shape)
+                sys.exit()
                 # for 512->16 
                 if compress:
                     feats = feats @ encoder_decoder.encoder 
@@ -553,6 +515,7 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
                 height)
             
             target = (output_for_grad[0].to(device) * feats).sum()
+            target.to(device)
             target.backward()
             colors_feats_copy = colors_feats.grad.clone()
             colors_feats.grad.zero_()
