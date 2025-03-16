@@ -504,7 +504,7 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
                 image_np = output[0].cpu().numpy()  
                 image = Image.fromarray((image_np * 255).astype(np.uint8)) 
 
-                results = yolo_model(image, verbose=False)
+                results = yolo_model(image,  classes=[77], verbose=False)
 
                 detections = results[0].boxes
                 class_indices = detections.cls.int().tolist()
