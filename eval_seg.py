@@ -288,12 +288,12 @@ def get_mask3d_yolo(splats, gaussian_features, prompt, neg_prompt, threshold=Non
     prompts = [prompt] + neg_prompt.split(";")
     inputs = clip_processor(text=prompts, return_tensors="pt", padding=True)
     text_feat = clip_model.get_text_features(**inputs)  # Shape: [num_queries, 512]
-    text_feat_norm = torch.nn.functional.normalize(text_feat, dim=1)
+    text_feat_norm = torch.nn.functional.normalize(text_feat, dim=-1)
 
     # # Dim redn
     # text_feat_compressed = text_feat_norm@encoder_decoder.encoder # 512 -> 16
     # text_feat = torch.nn.functional.normalize(text_feat_compressed,p=2,dim=1)
-    gaussian_features=torch.nn.functional.normalize(gaussian_features,dim=1)
+    gaussian_features=torch.nn.functional.normalize(gaussian_features,dim=-1)
     # Compute similarity scores
     score = gaussian_features @ text_feat_norm.float().T
     
