@@ -289,11 +289,13 @@ def get_mask3d_yolo(splats, gaussian_features, prompt, neg_prompt, threshold=Non
     inputs = clip_processor(text=prompts, return_tensors="pt", padding=True)
     text_feat = clip_model.get_text_features(**inputs)  # Shape: [num_queries, 512]
     text_feat_norm = torch.nn.functional.normalize(text_feat, dim=-1)
+    gaussian_features=torch.nn.functional.normalize(gaussian_features,dim=-1)
+    
 
     # # Dim redn
     # text_feat_compressed = text_feat_norm@encoder_decoder.encoder # 512 -> 16
     # text_feat = torch.nn.functional.normalize(text_feat_compressed,p=2,dim=1)
-    gaussian_features=torch.nn.functional.normalize(gaussian_features,dim=-1)
+
     # Compute similarity scores
     score = gaussian_features @ text_feat_norm.float().T
     
@@ -338,15 +340,15 @@ def apply_mask3d(splats, mask3d, mask3d_inverted):
 def save_output_as_image(alpha, file_name="output_image.png"):
     # output = output.permute(1, 2, 0)  # Change from (C, H, W) to (H, W, C)
     
-    print(alpha.shape)
+    # print(alpha.shape)
     # if alpha.ndim == 3:
     alpha = alpha.squeeze(2) 
-    print(alpha.shape)
+    # print(alpha.shape)
     # Convert tensor to NumPy
     alpha = alpha.cpu().detach().numpy()
 
     # Binarize the alpha channel
-    mask = (alpha > 0.5).astype(np.uint8) * 255  # Convert to 0-255 range
+    mask = (alpha > 0.9).astype(np.uint8) * 255  # Convert to 0-255 range
 
     # Save as image
     mask_image = Image.fromarray(mask, mode="L")  # "L" mode for grayscale

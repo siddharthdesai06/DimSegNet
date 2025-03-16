@@ -20,7 +20,7 @@ from ultralytics import YOLO
 import torch.nn as nn
 import random
 from matplotlib import patches
-
+from sklearn.decomposition import PCA
 dev = "cuda"
 
 class EncoderDecoder(nn.Module):
@@ -69,8 +69,9 @@ class CLIPFeatureExtractor:
         # Compute the "others" embedding only once
         prompt = ["others"]
         inputs = self.clip_processor(text=prompt, return_tensors="pt", padding=True).to("cuda")
-        text_feat = self.clip_model.get_text_features(**inputs)  # Shape: [1, 512] (embedding for "others")
-        others_embedding = torch.nn.functional.normalize(text_feat, dim=-1)
+        with torch.no_grad():
+            text_feat = self.clip_model.get_text_features(**inputs)  # Shape: [1, 512] (embedding for "others")
+            others_embedding = torch.nn.functional.normalize(text_feat, dim=-1)
         
         # Detach the tensor and convert it to a NumPy array
         return others_embedding.detach().cpu().numpy()
@@ -80,13 +81,29 @@ class CLIPFeatureExtractor:
             masks = masks.cpu()
 
         # Use the precomputed "others" embedding
-        others_embedding = self.others_embedding
+        others_embedding = self.embeddings["others"]  
+        others_embedding = others_embedding.reshape(1, -1)   
+
+        # other_calc= self.others_embedding
+
+        # others_embedding = torch.tensor(others_embedding) if isinstance(others_embedding, np.ndarray) else others_embedding
+        # other_calc = torch.tensor(other_calc) if isinstance(other_calc, np.ndarray) else other_calc
+        # others_embedding = torch.nn.functional.normalize(others_embedding,dim=-1)
+
 
         # Get the shape of the image
         H, W, _ = np.array(image).shape
-        
+
+        # print("others embed shape",others_embedding.shape)
+        # print("others embed shape",other_calc.shape)
+
         # Initialize the feature map with the "others" embedding
         feature_map = others_embedding.repeat(H * W, axis=0).reshape(H, W, 512)
+        np.set_printoptions(precision=10, suppress=False)
+        # print("Feature Map:", feature_map[0][0])
+        # sys.exit()
+        # print(feature_map.shape)
+        # print(feature_map[0][0])
         # print("class_indices",len(class_indices))
         # print("masks_shape",masks.shape)
         # sys.exit()
@@ -95,9 +112,20 @@ class CLIPFeatureExtractor:
             class_idx = class_indices[i]
             if class_idx >= len(classes) or classes[class_idx] == "N/A":
                 continue
+            # print("embeddeong attachment",classes[class_idx])
+            # sys.exit()
             class_vector = self.embeddings[classes[class_idx]]
+            # print(class_vector)
+            # sys.exit()
+            # print("mask ka shape",mask.shape)
             feature_map[mask > 0] = class_vector
-
+            # print("class_vector for that class",class_vector)
+            # indices = np.argwhere(mask > 0)  # Get [x, y] coordinates
+            # indices = indices.T
+            # print("indices ak shape",indices.shape)
+            # for x, y in indices:
+            #     print(f"Feature at ({x}, {y}): {feature_map[x, y]}")
+            #     break
         return feature_map
 
 class Visualizer:
@@ -439,6 +467,10 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
     colmap_project = splats["colmap_project"]
     images = sorted(colmap_project.images.values(), key=lambda x: x.name)
     image_id = 0
+
+    pca = PCA(n_components=3)
+    first_time = True
+    
     for image in tqdm(images, desc="Feature backprojection (images)"):
             if image.name in test_images:
                 print(f"Skipping {image.name} as it is test image")
@@ -490,10 +522,17 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
                     Visualizer.save_sam_op(masks=masks, image_id=image_id)
 
                     clip_feature_map = clip_extractor.generate_feature_map(image, masks.squeeze(1), class_indices, class_names)
-                
-                print("clip_feature_map_shape",clip_feature_map.shape)
-                # 
+
+#---------------------------------------------------------------------------
+                # print("clip_feature_map_shape",clip_feature_map.shape)
+                # print("before",clip_feature_map[18,34])
                 feats = torch.nn.functional.normalize(torch.tensor(clip_feature_map, device = dev), dim=-1)
+                
+
+                # print("after",feats[18,34])
+                # sys.exit()
+#----------------------------------------------------------------
+
                 print("feats_feature_map_shape",feats.shape)
                 # sys.exit()
                 # for 512->16 
@@ -501,6 +540,20 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
                     feats = feats @ encoder_decoder.encoder 
         
                 image_id+=1
+
+            print("Final Feats shape", feats.shape)
+            feats_flattened = feats.reshape(-1, 512).detach().cpu().numpy()
+            if first_time:
+                feats_pca = pca.fit_transform(feats_flattened)
+                feats_pca_first_time = feats_pca
+                first_time = False
+            else:
+                feats_pca = pca.transform(feats_flattened)
+            feats_pca = (feats_pca - feats_pca_first_time.min(axis=0))/(feats_pca_first_time.max(axis=0) - feats_pca_first_time.min(axis=0))
+            feats_pca = np.clip(feats_pca, 0, 1)
+            feats_pca = feats_pca.reshape(height, width, 3)
+            cv2.imshow("feats_pca", (feats_pca * 255).astype(np.uint8))
+            cv2.waitKey(100)
 
             # Backproject features onto gaussians
             output_for_grad, _, meta = rasterization(
