@@ -70,7 +70,7 @@ class CLIPFeatureExtractor:
         prompt = ["others"]
         inputs = self.clip_processor(text=prompt, return_tensors="pt", padding=True).to("cuda")
         text_feat = self.clip_model.get_text_features(**inputs)  # Shape: [1, 512] (embedding for "others")
-        others_embedding = torch.nn.functional.normalize(text_feat, p=2, dim=1)
+        others_embedding = torch.nn.functional.normalize(text_feat, dim=-1)
         
         # Detach the tensor and convert it to a NumPy array
         return others_embedding.detach().cpu().numpy()
@@ -103,7 +103,7 @@ class CLIPFeatureExtractor:
 class Visualizer:
 
     @staticmethod
-    def save_yolo_op(image, bboxes, masks,class_names, save_dir="visualizations/yolo_output", image_id=0):
+    def save_yolo_op(image, bboxes, masks, class_names, save_dir="visualizations/yolo_output", image_id=0):
         os.makedirs(save_dir, exist_ok=True)  # Create directory if not exists
         save_path = os.path.join(save_dir, f"image_{image_id}.png")
 
@@ -459,7 +459,7 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
                     height=height, 
                     sh_degree=3,
                     )
-                image_tensor = output.permute(0, 3, 1, 2).to(device)
+                # image_tensor = output.permute(0, 3, 1, 2).to(device)
                 
                 # Convert rasterized output to PIL image
                 image_np = output[0].cpu().numpy()  
@@ -493,9 +493,9 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
                 
                 print("clip_feature_map_shape",clip_feature_map.shape)
                 # 
-                feats = torch.nn.functional.normalize(torch.tensor(clip_feature_map, device = dev), dim=1)
+                feats = torch.nn.functional.normalize(torch.tensor(clip_feature_map, device = dev), dim=-1)
                 print("feats_feature_map_shape",feats.shape)
-                sys.exit()
+                # sys.exit()
                 # for 512->16 
                 if compress:
                     feats = feats @ encoder_decoder.encoder 
