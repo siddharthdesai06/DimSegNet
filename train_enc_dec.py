@@ -41,7 +41,7 @@ def compute_clip_class_embeddings(classes, clip_model, clip_processor):
     inputs = clip_processor(text=classes, return_tensors="pt", padding=True).to("cuda")
     with torch.no_grad():
         text_features = clip_model.get_text_features(**inputs)  # (num_classes, 512)
-        text_features = text_features / text_features.norm(dim=-1, keepdim=True)  # Normalize
+        text_features = torch.nn.functional.normalize(text_features,dim=-1)  # Normalize
 
     # Store in a dictionary
     class_embeddings = {cls: text_features[i].cpu().numpy() for i, cls in enumerate(classes)}
@@ -91,7 +91,7 @@ def train(model, embedding_matrix, device, num_epochs, save_path, lr=0.001):
 
 model = EncoderDecoder()
 
-num_epochs = 10000
+num_epochs = 100000
 save_path = "./encoder_decoder.ckpt"
 
 train(model, embedding_matrix, device, num_epochs, save_path)
