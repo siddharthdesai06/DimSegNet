@@ -541,6 +541,7 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
         
                 image_id+=1
 
+            image_original = cv2.cvtColor(image_np, cv2.COLOR_RGB2BGR)  
             print("Final Feats shape", feats.shape)
             feats_flattened = feats.reshape(-1, 512).detach().cpu().numpy()
             if first_time:
@@ -552,7 +553,13 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
             feats_pca = (feats_pca - feats_pca_first_time.min(axis=0))/(feats_pca_first_time.max(axis=0) - feats_pca_first_time.min(axis=0))
             feats_pca = np.clip(feats_pca, 0, 1)
             feats_pca = feats_pca.reshape(height, width, 3)
-            cv2.imshow("feats_pca", (feats_pca * 255).astype(np.uint8))
+            
+            
+            combined_image = np.hstack((image_original,(feats_pca * 255).astype(np.uint8)))
+           
+            # cv2.imshow("feats_pca", (feats_pca * 255).astype(np.uint8))
+            cv2.imshow("combined+pca",combined_image)
+
             cv2.waitKey(100)
 
             # Backproject features onto gaussians
