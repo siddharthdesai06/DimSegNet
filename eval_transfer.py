@@ -470,7 +470,7 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
 
     pca = PCA(n_components=3)
     first_time = True
-    
+
     for image in tqdm(images, desc="Feature backprojection (images)"):
             if image.name in test_images:
                 print(f"Skipping {image.name} as it is test image")
@@ -564,8 +564,8 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
                 colors_feats, 
                 viewmat[None], 
                 K[None], 
-                width, 
-                height)
+                width=width, 
+                height=height)
             
             target = (output_for_grad[0].to(device) * feats).sum()
             target.to(device)

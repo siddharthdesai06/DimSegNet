@@ -477,11 +477,11 @@ def main(
     test_images = {"test_0.jpg", "test_1.jpg", "test_2.jpg","test_3.jpg"} 
      # # Compute negative classes dynamically
     if prompt in class_names.values():
-        neg_classes = ["others"] + [name for name in class_names.values() if name != prompt] 
+        neg_classes =  [name for name in class_names.values() if name != prompt] + ["others"]
     else:
         neg_classes = ["others"]
 
-    # neg_classes = ["other"]
+    # neg_classes = ["others"]
     neg_prompt = "; ".join(neg_classes)
     print(neg_prompt)
 
