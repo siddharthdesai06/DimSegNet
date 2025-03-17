@@ -479,7 +479,7 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
             width = int(K[0, 2] * 2)
             height = int(K[1, 2] * 2)
             with torch.no_grad():
-                output, _, meta = rasterization(
+                output, alphas, meta = rasterization(
                     means, 
                     quats, 
                     scales, 
@@ -492,6 +492,9 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
                     sh_degree=3,
                     )
                 # image_tensor = output.permute(0, 3, 1, 2).to(device)
+
+                alpha = alphas[0].detach().cpu().numpy()
+                cv2.imshow("Alpha", alpha)
                 
                 # Convert rasterized output to PIL image
                 image_np = output[0].cpu().numpy()  
@@ -515,6 +518,7 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
                     masks = torch.tensor(masks)  # Convert to PyTorch tensor
 
                 # Get CLIP feature map
+                flag = True
                 if masks.numel() > 0:  # Ensure masks are not empt 
                     
                     Visualizer.save_yolo_op(image, bboxes, masks, labels, image_id=image_id)
@@ -522,6 +526,18 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
                     Visualizer.save_sam_op(masks=masks, image_id=image_id)
 
                     clip_feature_map = clip_extractor.generate_feature_map(image, masks.squeeze(1), class_indices, class_names)
+                    flag = False
+
+                    mask_2d = masks.squeeze(1).cpu().numpy()
+                    for mask in mask_2d:
+                        image_np = image_np * (1-0.5*mask[...,None]) + (mask[...,None])*np.array([0, 0.0, 1.0])
+                        # print(image_np.shape)
+                        image_np = np.clip(image_np, 0, 1.0)
+                        image_np = image_np.astype(np.float32)
+                    # exit()
+                    image_np = np.ascontiguousarray(image_np)
+                    cv2.imshow("Image with mask", image_np)
+                    
 
 #---------------------------------------------------------------------------
                 # print("clip_feature_map_shape",clip_feature_map.shape)
@@ -560,7 +576,10 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
             # cv2.imshow("feats_pca", (feats_pca * 255).astype(np.uint8))
             cv2.imshow("combined+pca",combined_image)
 
-            cv2.waitKey(100)
+            cv2.waitKey(1)
+
+            if flag:
+                continue
 
             # Backproject features onto gaussians
             output_for_grad, _, meta = rasterization(
@@ -601,11 +620,43 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
             colors_feats_0.grad.zero_()
             del viewmat, meta, _, output, feats, output_for_grad, colors_feats_copy, target, target_0
             torch.cuda.empty_cache()
+            # break
             
             # Normalize and handle NaNs
     gaussian_features = gaussian_features / gaussian_denoms[..., None]
     gaussian_features = gaussian_features / gaussian_features.norm(dim=-1, keepdim=True)
     gaussian_features[torch.isnan(gaussian_features)] = 0
+    pca = PCA(n_components=3)
+    print("gaussian_features.shape", gaussian_features.shape)
+    gaussians_pca = pca.fit_transform(gaussian_features.detach().cpu().numpy())
+    gaussians_pca = gaussians_pca - np.min(gaussians_pca, axis=1,keepdims=True)
+    gaussians_pca = gaussians_pca / (np.max(gaussians_pca, axis=1,keepdims=True) + 1e-9)
+    print("gaussians_pca.shape", gaussians_pca.shape)
+    gaussians_pca = torch.from_numpy(gaussians_pca).float().cuda()
+    for image in tqdm(images, desc="PCA of gaussians"):
+            if image.name in test_images:
+                print(f"Skipping {image.name} as it is test image")
+                continue
+            viewmat = get_viewmat_from_colmap_image(image)
+            width = int(K[0, 2] * 2)
+            height = int(K[1, 2] * 2)
+            output, _, meta = rasterization(
+                    means, 
+                    quats, 
+                    scales, 
+                    opacities, 
+                    gaussians_pca, 
+                    viewmat[None], 
+                    K[None], 
+                    width=width, 
+                    height=height, 
+                    # sh_degree=3,
+                    )
+            output_cv = torch_to_cv(output[0])
+            # output_cv = np.clip(output_cv, 0, 1)
+            cv2.imshow("pca", output_cv)
+            if cv2.waitKey(10) & 0xFF == ord('q'):
+                break
     return gaussian_features
 
 def main(
