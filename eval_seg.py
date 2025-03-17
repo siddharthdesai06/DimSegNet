@@ -286,6 +286,7 @@ def get_mask3d_yolo(splats, gaussian_features, prompt, neg_prompt, threshold=Non
 
     # Process text prompts
     prompts = [prompt] + neg_prompt.split(";")
+
     inputs = clip_processor(text=prompts, return_tensors="pt", padding=True)
     text_feat = clip_model.get_text_features(**inputs)  # Shape: [num_queries, 512]
     text_feat_norm = torch.nn.functional.normalize(text_feat, dim=-1)
@@ -394,6 +395,7 @@ def get_2d_mask(splats, test_images, no_sh=False):
             height=K[1, 2] * 2,
             sh_degree=3 if not no_sh else None,
         )
+
 
 
         
@@ -512,8 +514,8 @@ def main(
         f"{results_dir}/extracted.gif",
         extracted,
         show_visual_feedback,
-        use_checkerboard_background=False,
-        use_white_background=False
+        use_checkerboard_background=True,
+        # use_white_background=False
     )
     render_to_gif(f"{results_dir}/deleted.gif", deleted, show_visual_feedback)
 
