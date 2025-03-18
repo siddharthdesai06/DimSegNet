@@ -341,72 +341,17 @@ def apply_mask3d(splats, mask3d, mask3d_inverted):
 
     return extracted, deleted, masked
 
+def save_2d_mask_from_frame(frame, file_name="output_mask.png", threshold=0.1):
+    # Convert the frame to grayscale (average the RGB channels)
+    grayscale = np.mean(frame, axis=-1).astype(np.uint8)
 
-# def save_output_as_image(alpha, file_name="output_image.png"):
-#     # output = output.permute(1, 2, 0)  # Change from (C, H, W) to (H, W, C)
-    
-#     # print(alpha.shape)
-#     # if alpha.ndim == 3:
-#     alpha = alpha.squeeze(2) 
-#     # print(alpha.shape)
-#     # Convert tensor to NumPy
-#     alpha = alpha.cpu().detach().numpy()
+    # Create a binary mask based on the threshold
+    mask = (grayscale > threshold * 255).astype(np.uint8) * 255
 
-#     # Binarize the alpha channel
-#     mask = (alpha > 0.9).astype(np.uint8) * 255  # Convert to 0-255 range
-
-#     # Save as image
-#     mask_image = Image.fromarray(mask, mode="L")  # "L" mode for grayscale
-#     mask_image.save(file_name)
-#     print(f"Binary mask saved as {file_name}")
-#     # output = output.cpu().detach().numpy()  # Convert tensor to NumPy array
-    
-#     # # If the output has values in the range [0, 1], scale it to [0, 255]
-#     # if output.max() <= 1.0:
-#     #     output = (output * 255).astype(np.uint8)
-#     # else:
-#     #     output = output.astype(np.uint8)
-
-#     # # Create an Image object using PIL and save it
-#     # image = Image.fromarray(output)
-#     # image.save(file_name)
-#     # print(f"Image saved as {file_name}")
-
-
-def save_output_as_image(output, file_name="output_image.png", threshold=0.1):
-    """
-    Save the 2D mask based on the output image.
-    Args:
-        output: The rendered output image (assumed to be a tensor or NumPy array).
-        file_name: Name of the output file to save.
-        threshold: The threshold to create the binary mask (default is 0.1 for low-intensity values).
-    """
-    # Convert output to a 2D array (ensure the output is a 2D image)
-    output = output.squeeze(0)  # Remove batch dimension if it's there
-
-    # If output is a tensor, convert it to NumPy (assuming it's a torch tensor)
-    output = output.cpu().detach().numpy()
-
-    # Normalize the output to a range of [0, 1] if necessary
-    if output.max() <= 1.0:
-        output = output * 255  # Convert to 0-255 range if necessary
-    else:
-        output = output.astype(np.uint8)
-
-    # Convert the image to grayscale (2D)
-    # Assuming `output` is a 3D array, let's convert it to grayscale (if it's RGB)
-    if output.ndim == 3:
-        # Convert RGB to grayscale by averaging the channels (simple approach)
-        output = np.mean(output, axis=-1).astype(np.uint8)
-
-    # Generate a binary mask by thresholding the output image
-    mask = (output > threshold * 255).astype(np.uint8) * 255  # Binarize image based on threshold
-
-    # Save the 2D mask as a grayscale image
-    mask_image = Image.fromarray(mask, mode="L")  # "L" mode for grayscale
+    # Save the mask as a grayscale image
+    mask_image = Image.fromarray(mask, mode="L")
     mask_image.save(file_name)
     print(f"2D mask saved as {file_name}")
-
 
 def get_2d_mask(splats, test_images, no_sh=False):
     means = splats["means"]
@@ -436,9 +381,10 @@ def get_2d_mask(splats, test_images, no_sh=False):
             sh_degree=3 if not no_sh else None,
         )
 
+        frame = np.clip(output[0].detach().cpu().numpy() * 255, 0, 255).astype(np.uint8)
 
         # Save the 2D mask based on the output image
-        save_output_as_image(output[0], f"{image.name}_mask.png")
+        save_2d_mask_from_frame(frame, f"{image.name}")
 
 def render_to_gif(
     output_path: str,
