@@ -341,18 +341,22 @@ def apply_mask3d(splats, mask3d, mask3d_inverted):
 
     return extracted, deleted, masked
 
-def save_2d_mask_from_frame(frame, file_name="output_mask.png", threshold=0.1):
-    # Convert the frame to grayscale (average the RGB channels)
+def save_mask_from_frame(frame, file_name="output_mask.png", threshold=0.1):
     grayscale = np.mean(frame, axis=-1).astype(np.uint8)
-
-    # Create a binary mask based on the threshold
     mask = (grayscale > threshold * 255).astype(np.uint8) * 255
-
-    # Save the mask as a grayscale image
     mask_image = Image.fromarray(mask, mode="L")
     mask_image.save(file_name)
     print(f"2D mask saved as {file_name}")
 
+
+def save_mask_from_alphas(alpha, file_name="output_image.png"):
+    alpha = alpha.squeeze(2) 
+    alpha = alpha.cpu().detach().numpy()
+    mask = (alpha > 0.9).astype(np.uint8) * 255
+    mask_image = Image.fromarray(mask, mode="L")  # "L" mode for grayscale
+    mask_image.save(file_name)
+    print(f"Binary mask saved as {file_name}")
+    
 def get_2d_mask(splats, test_images, no_sh=False):
     means = splats["means"]
     colors_dc = splats["features_dc"]
@@ -384,7 +388,8 @@ def get_2d_mask(splats, test_images, no_sh=False):
         frame = np.clip(output[0].detach().cpu().numpy() * 255, 0, 255).astype(np.uint8)
 
         # Save the 2D mask based on the output image
-        save_2d_mask_from_frame(frame, f"{image.name}")
+        save_mask_from_frame(frame, f"{image.name}")
+        save_mask_from_alphas(alphas[0], f"{image.name}")
 
 def render_to_gif(
     output_path: str,
@@ -456,7 +461,7 @@ def main(
     rasterizer: Literal[
     "inria", "gsplat"
     ] = "inria",  # Original or gsplat for checkpoints
-    prompt: str = "chair", # the one to be extracted or deleted
+    prompt: str = "teddy bear", # the one to be extracted or deleted
     data_factor: int = 4,
     show_visual_feedback: bool = True,
 ):
