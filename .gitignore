@@ -9,3 +9,5 @@ eval_datasets/
 *.jpg
 yolo_op/
 visualizations/
+*.png
+*.json
