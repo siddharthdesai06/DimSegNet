@@ -341,7 +341,7 @@ def apply_mask3d(splats, mask3d, mask3d_inverted):
 
     return extracted, deleted, masked
 
-def save_mask_from_frame(frame, file_name="output_mask.png", threshold=0.1):
+def save_mask_from_frame(frame, file_name="output_mask.png", threshold=0.5):
     grayscale = np.mean(frame, axis=-1).astype(np.uint8)
     mask = (grayscale > threshold * 255).astype(np.uint8) * 255
     mask_image = Image.fromarray(mask, mode="L")
