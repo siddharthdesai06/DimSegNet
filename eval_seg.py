@@ -388,7 +388,7 @@ def get_2d_mask(splats, test_images, no_sh=False):
         frame = np.clip(output[0].detach().cpu().numpy() * 255, 0, 255).astype(np.uint8)
 
         # Save the 2D mask based on the output image
-        save_mask_from_frame(frame, f"{image.name}")
+        # save_mask_from_frame(frame, f"{image.name}")
         save_mask_from_alphas(alphas[0], f"{image.name}")
 
 def render_to_gif(
@@ -461,7 +461,7 @@ def main(
     rasterizer: Literal[
     "inria", "gsplat"
     ] = "inria",  # Original or gsplat for checkpoints
-    prompt: str = "teddy bear", # the one to be extracted or deleted
+    prompt: str = "dining table", # the one to be extracted or deleted
     data_factor: int = 4,
     show_visual_feedback: bool = True,
 ):
