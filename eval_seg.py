@@ -208,7 +208,6 @@ def prune_by_gradients(splats):
     splats["opacity"] = splats["opacity"][mask]
     return splats
 
-
 def test_proper_pruning(splats, splats_after_pruning):
     colmap_project = splats["colmap_project"]
     frame_idx = 0
@@ -335,19 +334,18 @@ def apply_mask3d(splats, mask3d, mask3d_inverted):
     deleted["rotation"] = deleted["rotation"][mask3d_inverted]
     deleted["opacity"] = deleted["opacity"][mask3d_inverted]
 
-    masked["features_dc"][mask3d] = 1  # (1 - 0.5) / 0.2820947917738781
-    masked["features_dc"][~mask3d] = 0  # (0 - 0.5) / 0.2820947917738781
+    masked["features_dc"][mask3d] =  (1 - 0.5) / 0.2820947917738781
+    masked["features_dc"][~mask3d] = (0 - 0.5) / 0.2820947917738781
     masked["features_rest"][~mask3d] = 0
 
     return extracted, deleted, masked
 
 def save_mask_from_frame(frame, file_name="output_mask.png", threshold=0.5):
     grayscale = np.mean(frame, axis=-1).astype(np.uint8)
-    mask = (grayscale > threshold * 255).astype(np.uint8) * 255
+    mask = (grayscale).astype(np.uint8)
     mask_image = Image.fromarray(mask, mode="L")
     mask_image.save(file_name)
     print(f"2D mask saved as {file_name}")
-
 
 def save_mask_from_alphas(alpha, file_name="output_image.png"):
     alpha = alpha.squeeze(2) 
@@ -382,14 +380,14 @@ def get_2d_mask(splats, test_images, no_sh=False):
             K[None],
             width=K[0, 2] * 2,
             height=K[1, 2] * 2,
-            sh_degree=3 if not no_sh else None,
+            sh_degree=None #if not no_sh else None,
         )
 
         frame = np.clip(output[0].detach().cpu().numpy() * 255, 0, 255).astype(np.uint8)
 
         # Save the 2D mask based on the output image
-        # save_mask_from_frame(frame, f"{image.name}")
-        save_mask_from_alphas(alphas[0], f"{image.name}")
+        save_mask_from_frame(frame, f"{image.name}")
+        # save_mask_from_alphas(alphas[0], f"{image.name}")
 
 def render_to_gif(
     output_path: str,
@@ -498,11 +496,11 @@ def main(
     
     extracted, deleted, masked = apply_mask3d(splats, mask3d, mask3d_inv)
     
-    get_2d_mask(extracted, test_images)
+    get_2d_mask(masked, test_images)
 
     render_to_gif(
         f"{results_dir}/extracted.gif",
-        extracted,
+        masked,
         show_visual_feedback,
         use_checkerboard_background=True,
         # use_white_background=False
