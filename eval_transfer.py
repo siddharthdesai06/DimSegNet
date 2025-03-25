@@ -679,7 +679,7 @@ def main(
     compress: bool=False,
    
 ):
-    test_images = {"test_0.jpg", "test_1.jpg", "test_2.jpg", "test_3.jpg", "test_4.jpg",} 
+    test_images = {"test_0.jpg", "test_1.jpg", "test_2.jpg", "test_3.jpg", "frame_00131.jpg"} 
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is required for this demo")
 

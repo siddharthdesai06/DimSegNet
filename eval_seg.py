@@ -450,21 +450,21 @@ def render_to_gif(
         cv2.destroyAllWindows()
 
 def main(
-    data_dir: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/teatime",  # colmap path
-    checkpoint: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/teatime/chkpnt30000.pth",  # checkpoint path, can generate from original 3DGS repo
-    results_dir: str = "./results/teatime",
+    data_dir: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/ramen",  # colmap path
+    checkpoint: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/ramen/chkpnt30000.pth",  # checkpoint path, can generate from original 3DGS repo
+    results_dir: str = "./results/ramen",
     # data_dir: str = "/home/siddharth/siddharth/thesis/3dgs-gradient-backprojection/data/garden",  # colmap path
     # checkpoint: str = "/home/siddharth/siddharth/thesis/3dgs-gradient-backprojection/data/garden/ckpts/ckpt_29999_rank0.pt",  # checkpoint path, can generate from original 3DGS repo
     # results_dir: str = "./results/garden",  # output
     rasterizer: Literal[
     "inria", "gsplat"
     ] = "inria",  # Original or gsplat for checkpoints
-    prompt: str = "teddy bear", # the one to be extracted or deleted
+    prompt: str = "dining table", # the one to be extracted or deleted
     data_factor: int = 4,
     show_visual_feedback: bool = True,
 ):
 
-    test_images = {"test_0.jpg", "test_1.jpg", "test_2.jpg","test_3.jpg"} 
+    test_images = {"test_0.jpg", "test_1.jpg", "test_2.jpg","test_3.jpg","frame_00131.jpg"} 
      # # Compute negative classes dynamically
     if prompt in class_names.values():
         neg_classes =  [name for name in class_names.values() if name != prompt] + ["others"]
