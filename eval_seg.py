@@ -334,8 +334,8 @@ def apply_mask3d(splats, mask3d, mask3d_inverted):
     deleted["rotation"] = deleted["rotation"][mask3d_inverted]
     deleted["opacity"] = deleted["opacity"][mask3d_inverted]
 
-    masked["features_dc"][mask3d] =  (1 - 0.5) / 0.2820947917738781
-    masked["features_dc"][~mask3d] = (0 - 0.5) / 0.2820947917738781
+    masked["features_dc"][mask3d] =  1#(1 - 0.5) / 0.2820947917738781
+    masked["features_dc"][~mask3d] = 0#(0 - 0.5) / 0.2820947917738781
     masked["features_rest"][~mask3d] = 0
 
     return extracted, deleted, masked
@@ -355,7 +355,7 @@ def save_mask_from_alphas(alpha, file_name="output_image.png"):
     mask_image.save(file_name)
     print(f"Binary mask saved as {file_name}")
     
-def get_2d_mask(splats, test_images, no_sh=False):
+def get_2d_mask(splats, test_images, no_sh=True):
     means = splats["means"]
     colors_dc = splats["features_dc"]
     colors_rest = splats["features_rest"]
@@ -375,7 +375,7 @@ def get_2d_mask(splats, test_images, no_sh=False):
             quats,
             scales,
             opacities,
-            colors,
+            colors[:,0,:], # [N, 3]
             viewmat[None],
             K[None],
             width=K[0, 2] * 2,
