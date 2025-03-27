@@ -459,7 +459,7 @@ def main(
     rasterizer: Literal[
     "inria", "gsplat"
     ] = "inria",  # Original or gsplat for checkpoints
-    prompt: str = "dining table", # the one to be extracted or deleted
+    prompt: str = "bottle", # the one to be extracted or deleted
     data_factor: int = 4,
     show_visual_feedback: bool = True,
 ):
