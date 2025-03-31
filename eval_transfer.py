@@ -470,7 +470,7 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
 
     pca = PCA(n_components=3)
     first_time = True
-
+    unique_labels = set()
     for image in tqdm(images, desc="Feature backprojection (images)"):
             if image.name in test_images:
                 print(f"Skipping {image.name} as it is test image")
@@ -508,6 +508,7 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
 
                 # print("YOLO Detected Classes:", class_indices)
                 labels = [class_names[i] for i in class_indices]
+                unique_labels.update(labels)
                 print(labels)
 
                 # Use SAM to get masks
@@ -623,6 +624,7 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
             # break
             
             # Normalize and handle NaNs
+    print(unique_labels)
     gaussian_features = gaussian_features / gaussian_denoms[..., None]
     gaussian_features = gaussian_features / gaussian_features.norm(dim=-1, keepdim=True)
     gaussian_features[torch.isnan(gaussian_features)] = 0
