@@ -11,3 +11,4 @@ yolo_op/
 visualizations/
 *.png
 *.json
+checkpoints/
