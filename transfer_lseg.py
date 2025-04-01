@@ -434,7 +434,7 @@ def create_feature_field_lseg(splats):
     return gaussian_features'''
 
 
-def create_feature_field_lseg(splats, batch_count = 1, use_cpu=False):
+def create_feature_field_lseg(splats, test_images={},batch_count = 1, use_cpu=False):
     device = "cpu" if use_cpu else "cuda"
 
     net = LSegNet(
@@ -487,6 +487,9 @@ def create_feature_field_lseg(splats, batch_count = 1, use_cpu=False):
     ):
         batch = images[batch_start:batch_start + batch_size]
         for image in batch:
+            if image.name in test_images:
+                print(f"Skipping {image.name} as it is test image")
+                continue
             viewmat = get_viewmat_from_colmap_image(image)
             # print("viewmat", viewmat.shape)
             width = int(K[0, 2] * 2)
@@ -587,16 +590,17 @@ def main(
     # checkpoint: str = "/home/siddharth/siddharth/thesis/3dgs-gradient-backprojection/data/garden/ckpts/ckpt_29999_rank0.pt",  # checkpoint path, can generate from original 3DGS repo
     # data_dir: str = "/home/open/SKV_Mid_Rv/gaussian-splatting/data/outside_IDR_obj_track",  # colmap path
     # checkpoint: str = "/home/open/SKV_Mid_Rv/gaussian-splatting/output/out_side_idr_mehul_track/chkpnt7000.pth",  # checkpoint path, can generate from original 3DGS repo
-    data_dir: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/teatime",  # colmap path
-    checkpoint: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/teatime/chkpnt30000.pth",  # checkpoint path, can generate from original 3DGS repo
-    results_dir: str = "./results/teatime",
+    data_dir: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/ramen",  # colmap path
+    checkpoint: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/ramen/chkpnt30000.pth",  # checkpoint path, can generate from original 3DGS repo
+    results_dir: str = "./results/ramen",
     # results_dir: str = "./results/mehul",  # outpu
     rasterizer: Literal[
         "inria", "gsplat"
     ] = "inria",  # Original or GSplat for checkpoints
     data_factor: int = 4,
 ):
-
+    test_images = {"test_0.jpg", "test_1.jpg", "test_2.jpg", "test_3.jpg", "frame_00131.jpg"} 
+    
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is required for this demo")
 
@@ -606,11 +610,11 @@ def main(
     splats = load_checkpoint(
         checkpoint, data_dir, rasterizer=rasterizer, data_factor=data_factor
     )
-    # splats_optimized = prune_by_gradients(splats)
+    splats_optimized = prune_by_gradients(splats)
     print("Prunign done")
     # sys.exit()
-    # test_proper_pruning(splats, splats_optimized)
-    # splats = splats_optimized
+    test_proper_pruning(splats, splats_optimized)
+    splats = splats_optimized
     features = create_feature_field_lseg(splats)
     print("features_size", features.shape)
     torch.save(features, f"{results_dir}/features_lseg.pt")
