@@ -590,9 +590,9 @@ def main(
     # checkpoint: str = "/home/siddharth/siddharth/thesis/3dgs-gradient-backprojection/data/garden/ckpts/ckpt_29999_rank0.pt",  # checkpoint path, can generate from original 3DGS repo
     # data_dir: str = "/home/open/SKV_Mid_Rv/gaussian-splatting/data/outside_IDR_obj_track",  # colmap path
     # checkpoint: str = "/home/open/SKV_Mid_Rv/gaussian-splatting/output/out_side_idr_mehul_track/chkpnt7000.pth",  # checkpoint path, can generate from original 3DGS repo
-    data_dir: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/ramen",  # colmap path
-    checkpoint: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/ramen/chkpnt30000.pth",  # checkpoint path, can generate from original 3DGS repo
-    results_dir: str = "./results/ramen",
+    data_dir: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/figurines",  # colmap path
+    checkpoint: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/figurines/chkpnt30000.pth",  # checkpoint path, can generate from original 3DGS repo
+    results_dir: str = "./results/figurines",
     # results_dir: str = "./results/mehul",  # outpu
     rasterizer: Literal[
         "inria", "gsplat"
