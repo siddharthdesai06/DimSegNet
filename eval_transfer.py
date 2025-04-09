@@ -560,7 +560,7 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
 
             image_original = cv2.cvtColor(image_np, cv2.COLOR_RGB2BGR)  
             print("Final Feats shape", feats.shape)
-            feats_flattened = feats.reshape(-1, 512).detach().cpu().numpy()
+            feats_flattened = feats.reshape(-1, embed_dim).detach().cpu().numpy()
             if first_time:
                 feats_pca = pca.fit_transform(feats_flattened)
                 feats_pca_first_time = feats_pca
@@ -678,7 +678,7 @@ def main(
     ] = "inria",  # Original or GSplat for checkpoints
     data_factor: int = 4,
     embed_dim: int=16,
-    compress: bool=False,
+    compress: bool=True,
    
 ):
     test_images = {"test_0.jpg", "test_1.jpg", "test_2.jpg", "test_3.jpg", "frame_00131.jpg"} 
