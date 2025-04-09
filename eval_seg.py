@@ -33,7 +33,7 @@ class EncoderDecoder(nn.Module):
 
 
 encoder_decoder = EncoderDecoder().to("cuda")
-encoder_decoder.load_state_dict(torch.load("/home/siddharth/siddharth/thesis/my_seg_yolo/enc_dec_model/encoder_decoder.ckpt"))
+encoder_decoder.load_state_dict(torch.load("./encoder_decoder.ckpt"))
 
 
 class_names = {
@@ -281,7 +281,8 @@ def test_proper_pruning(splats, splats_after_pruning):
 
 def get_mask3d_yolo(splats, gaussian_features, prompt, neg_prompt, threshold=None):
     # Load CLIP model and processor
-
+    gaussian_features=torch.nn.functional.normalize(gaussian_features,dim=-1)
+    
     clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to("cuda")
     clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
     
@@ -293,15 +294,17 @@ def get_mask3d_yolo(splats, gaussian_features, prompt, neg_prompt, threshold=Non
     inputs = clip_processor(text=prompts, return_tensors="pt", padding=True)
     text_feat = clip_model.get_text_features(**inputs)  # Shape: [num_queries, 512]
     text_feat_norm = torch.nn.functional.normalize(text_feat, dim=-1)
-    gaussian_features=torch.nn.functional.normalize(gaussian_features,dim=-1)
-    
 
     # # Dim redn
-    # text_feat_compressed = text_feat_norm@encoder_decoder.encoder # 512 -> 16
-    # text_feat = torch.nn.functional.normalize(text_feat_compressed,p=2,dim=1)
+    print("size of text_feat", text_feat_norm[0])
+    
+    text_feat_compressed = text_feat_norm @ encoder_decoder.encoder # 512 -> 16
+    print("size of text_feat_compressewed", text_feat_compressed[0])
+    # sys.exit()
+    text_feat_norm = torch.nn.functional.normalize(text_feat_compressed,dim=-1)
 
     # Compute similarity scores
-    score = gaussian_features @ text_feat_norm.float().T
+    score = gaussian_features @ text_feat_norm.T
     
     # Compute masks
     mask_3d = score[:, 0] > score[:, 1:].max(dim=1)[0]
@@ -450,16 +453,16 @@ def render_to_gif(
         cv2.destroyAllWindows()
 
 def main(
-    data_dir: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/ramen",  # colmap path
-    checkpoint: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/ramen/chkpnt30000.pth",  # checkpoint path, can generate from original 3DGS repo
-    results_dir: str = "./results/ramen",
+    data_dir: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/figurines",  # colmap path
+    checkpoint: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/figurines/chkpnt30000.pth",  # checkpoint path, can generate from original 3DGS repo
+    results_dir: str = "./results/figurines",
     # data_dir: str = "/home/siddharth/siddharth/thesis/3dgs-gradient-backprojection/data/garden",  # colmap path
     # checkpoint: str = "/home/siddharth/siddharth/thesis/3dgs-gradient-backprojection/data/garden/ckpts/ckpt_29999_rank0.pt",  # checkpoint path, can generate from original 3DGS repo
     # results_dir: str = "./results/garden",  # output
     rasterizer: Literal[
     "inria", "gsplat"
     ] = "inria",  # Original or gsplat for checkpoints
-    prompt: str = "dining table", # the one to be extracted or deleted
+    prompt: str = "chair", # the one to be extracted or deleted
     data_factor: int = 4,
     show_visual_feedback: bool = True,
 ):
