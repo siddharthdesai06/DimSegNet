@@ -16,6 +16,26 @@ import sys
 import torch.nn as nn
 
 from PIL import Image
+from transformers import CLIPProcessor, CLIPModel
+
+
+
+class EncoderDecoder(nn.Module):
+    def __init__(self):
+        super(EncoderDecoder, self).__init__()
+        self.encoder = nn.Parameter(torch.randn(512, 16))
+        self.decoder = nn.Parameter(torch.randn(16, 512))
+
+    def forward(self, x):
+        x = x @ self.encoder
+        y = x @ self.decoder
+        return x, y
+
+
+encoder_decoder = EncoderDecoder().to("cuda")
+encoder_decoder.load_state_dict(torch.load("./encoder_decoder.ckpt"))
+
+
 
 class_names = {
     0: 'person', 1: 'bicycle', 2: 'car', 3: 'motorcycle', 4: 'airplane', 5: 'bus', 
@@ -35,51 +55,6 @@ class_names = {
     72: 'refrigerator', 73: 'book', 74: 'clock', 75: 'vase', 76: 'scissors', 
     77: 'teddy bear', 78: 'hair drier', 79: 'toothbrush'
 }
-
-class EncoderDecoder(nn.Module):
-    def __init__(self, input_channels=512, compressed_channels=16):
-        super(EncoderDecoder, self).__init__()
-        
-        # Encoder
-        self.encoder = nn.Sequential(
-            nn.Conv2d(input_channels, 256, kernel_size=3, stride=1, padding=1, bias=False),
-            nn.BatchNorm2d(256),
-            nn.LeakyReLU(),
-            
-            nn.Conv2d(256, 128, kernel_size=3, stride=1, padding=1, bias=False),
-            nn.BatchNorm2d(128),
-            nn.LeakyReLU(),
-            
-            nn.Conv2d(128, compressed_channels, kernel_size=3, stride=1, padding=1, bias=False),
-            nn.BatchNorm2d(compressed_channels),
-            nn.LeakyReLU(),
-        )
-        
-        # Decoder
-        self.decoder = nn.Sequential(
-            nn.Conv2d(compressed_channels, 128, kernel_size=3, stride=1, padding=1, bias=False),
-            nn.BatchNorm2d(128),
-            nn.LeakyReLU(),
-            
-            nn.Conv2d(128, 256, kernel_size=3, stride=1, padding=1, bias=False),
-            nn.BatchNorm2d(256),
-            nn.LeakyReLU(),
-            
-            nn.Conv2d(256, input_channels, kernel_size=3, stride=1, padding=1, bias=False),
-            nn.BatchNorm2d(input_channels),
-            nn.Sigmoid(),  # Assuming input features are normalized
-        )
-        
-    def forward(self, x):
-        encoded = self.encoder(x)
-        decoded = self.decoder(encoded)
-        return encoded, decoded
-    
-model_path = model_path = "/home/siddharth/siddharth/thesis/3dgs-gradient-backprojection/models/model_epoch_50.pth"  # Update with the path to your saved model
-device = "cuda"
-model = EncoderDecoder(input_channels=512, compressed_channels=16).to(device)
-model.load_state_dict(torch.load(model_path, map_location=device))
-model.eval()  # Set the model to evaluation mode
 
 def torch_to_cv(tensor):
     img_cv = tensor.detach().cpu().numpy()[..., ::-1]
@@ -175,9 +150,6 @@ def create_checkerboard(width, height, size=64):
             else:
                 checkerboard[y : y + size, x : x + size] = 128
     return checkerboard
-
-
-
 
 def prune_by_gradients(splats):
     colmap_project = splats["colmap_project"]
@@ -311,25 +283,27 @@ def get_mask3d_lseg(splats, features, prompt, neg_prompt, threshold=None):
     net.load_state_dict(torch.load("./checkpoints/lseg_minimal_e200.ckpt"))
     net.eval()
     net.cuda()
-
+    features = torch.nn.functional.normalize(features, dim=-1)
+    
     # Preprocess the text prompt
     clip_text_encoder = net.clip_pretrained.encode_text
 
     prompts = [prompt] + neg_prompt.split(";")
-    print(prompts)
+    # print(prompts)
     prompt = clip.tokenize(prompts)
     prompt = prompt.cuda()
-    print(prompt)
+    # print(prompt)
 
     text_feat = clip_text_encoder(prompt)  # N, 512, N - number of prompts
     print('text_feature==========>',text_feat.shape)
     
-    text_feat_norm = torch.nn.functional.normalize(text_feat, dim=1)
+    text_feat_norm = torch.nn.functional.normalize(text_feat, dim=-1)
+    text_feat_norm = text_feat_norm.float() 
+    text_feat_compressed = text_feat_norm @ encoder_decoder.encoder # 512 -> 16
+    text_feat_norm = torch.nn.functional.normalize(text_feat_compressed,dim=-1)
 
-    features = torch.nn.functional.normalize(features, dim=1)
-    
     # for dim_redn......................
-    print("feat_shape",features.shape)
+    print("text_feat_norm",text_feat_norm.shape)
     # print("text_feat", text_feat_norm.shape)
     # text_feat_norm = text_feat_norm.unsqueeze(-1)
     # text_feat_norm = text_feat_norm.unsqueeze(-1)
@@ -345,8 +319,9 @@ def get_mask3d_lseg(splats, features, prompt, neg_prompt, threshold=None):
 
     #end ..........................................
     # sys.exit()
-    score = features @ text_feat_norm.float().T
-    print("score shape",score.shape)
+    score = features @ text_feat_norm.T
+    print("score shape latest",score.shape)
+    sys.exit()
        
     # sys.exit()
     mask_3d = score[:, 0] > score[:, 1:].max(dim=1)[0]
@@ -356,6 +331,66 @@ def get_mask3d_lseg(splats, features, prompt, neg_prompt, threshold=None):
 
     return mask_3d, mask_3d_inv
 
+
+def get_mask_3d_lseg_new(splats, features, prompt, neg_prompt, threshold=None):
+        
+    net = LSegNet(
+    backbone="clip_vitl16_384",
+    features=256,
+    crop_size=480,
+    arch_option=0,
+    block_depth=0,
+    activation="lrelu",
+    )
+        
+    # Load pre-trained weights
+    # net.load_state_dict(torch.load("./checkpoints/lseg_minimal_e200.ckpt"))
+    # net.eval()
+    # net.cuda()
+    gaussian_features = torch.nn.functional.normalize(features, dim=-1)
+
+    clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to("cuda")
+    clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+    
+    prompts = [prompt] + neg_prompt.split(";")
+ 
+    inputs = clip_processor(text=prompts, return_tensors="pt", padding=True)
+    text_feat = clip_model.get_text_features(**inputs)  # Shape: [num_queries, 512]
+    text_feat_norm = torch.nn.functional.normalize(text_feat, dim=-1)
+
+
+    # text_feat_norm = text_feat_norm.float() 
+    text_feat_compressed = text_feat_norm @ encoder_decoder.encoder # 512 -> 16
+    text_feat_norm = torch.nn.functional.normalize(text_feat_compressed,dim=-1)
+
+    # for dim_redn......................
+    print("text_feat_norm",text_feat_norm.shape)
+    # print("text_feat", text_feat_norm.shape)
+    # text_feat_norm = text_feat_norm.unsqueeze(-1)
+    # text_feat_norm = text_feat_norm.unsqueeze(-1)
+    # print("text_feat_later", text_feat_norm.shape)
+    # text_feat_norm = text_feat_norm.to(torch.float32)
+    # with torch.no_grad():
+    #     encoded,_=model(text_feat_norm) 
+    # print("encoded_shape", encoded.shape)
+    # encoded_text_feat = encoded.squeeze(-1)  
+    # encoded_text_feat = encoded_text_feat.squeeze(-1)  
+    # print("encoded_text_shape", encoded_text_feat.shape)
+    # text_feat_norm = encoded_text_feat
+
+    #end ..........................................
+    # sys.exit()
+    score = features @ text_feat_norm.T
+    print("score shape latest",score.shape)
+    # sys.exit()
+       
+    # sys.exit()
+    mask_3d = score[:, 0] > score[:, 1:].max(dim=1)[0]
+    if threshold is not None:
+        mask_3d = mask_3d & (score[:, 0] > threshold)
+    mask_3d_inv = ~mask_3d
+
+    return mask_3d, mask_3d_inv
 
 def apply_mask3d(splats, mask3d, mask3d_inverted):
     if mask3d_inverted == None:
@@ -500,14 +535,14 @@ def main(
     # data_dir: str = "/home/open/SKV_Mid_Rv/gaussian-splatting/data/outside_IDR_obj_track",  # colmap path
     # checkpoint: str = "/home/open/SKV_Mid_Rv/gaussian-splatting/output/out_side_idr_mehul_track/chkpnt7000.pth",  # checkpoint path, can generate from original 3DGS repo
     # results_dir: str = "./results/mehul",  # outpu
-    data_dir: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/figurines",  # colmap path
-    checkpoint: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/figurines/chkpnt30000.pth",  # checkpoint path, can generate from original 3DGS repo
-    results_dir: str = "./results/figurines",
+    data_dir: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/teatime",  # colmap path
+    checkpoint: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/teatime/chkpnt30000.pth",  # checkpoint path, can generate from original 3DGS repo
+    results_dir: str = "./results/teatime",
     
     rasterizer: Literal[
     "inria", "gsplat"
     ] = "inria",  # Original or gsplat for checkpoints
-    prompt: str = "dining table", # the one to be extracted or deleted
+    prompt: str = "teddy bear", # the one to be extracted or deleted
     # neg_prompt: str = "Car; Other",
     data_factor: int = 4,
     show_visual_feedback: bool = True,
@@ -537,7 +572,7 @@ def main(
     test_proper_pruning(splats, splats_optimized)
     splats = splats_optimized
     features = torch.load(f"{results_dir}/features_lseg.pt")
-    mask3d, mask3d_inv = get_mask3d_lseg(splats, features, prompt, neg_prompt)
+    mask3d, mask3d_inv = get_mask_3d_lseg_new(splats, features, prompt, neg_prompt)
     
     # render_to_gif(
     #     f"{results_dir}/extracted.gif",
@@ -549,12 +584,12 @@ def main(
     
     get_2d_mask(masked, test_images)
 
-    # render_to_gif(
-    #     f"{results_dir}/extracted.gif",
-    #     extracted,
-    #     show_visual_feedback,
-    #     use_checkerboard_background=False,
-    # )
+    render_to_gif(
+        f"{results_dir}/extracted.gif",
+        extracted,
+        show_visual_feedback,
+        use_checkerboard_background=False,
+    )
     # render_to_gif(f"{results_dir}/deleted.gif", deleted, show_visual_feedback)
 
 
