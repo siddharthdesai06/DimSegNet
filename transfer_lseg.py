@@ -11,55 +11,26 @@ matplotlib.use("TkAgg") # To avoid conflict with cv2
 from tqdm import tqdm
 from lseg import LSegNet
 
+from sklearn.decomposition import PCA
 import sys
 import torch.nn as nn
 import math
+import cv2
 
 
 class EncoderDecoder(nn.Module):
-    def __init__(self, input_channels=512, compressed_channels=16):
+    def __init__(self):
         super(EncoderDecoder, self).__init__()
-        
-        # Encoder
-        self.encoder = nn.Sequential(
-            nn.Conv2d(input_channels, 256, kernel_size=3, stride=1, padding=1, bias=False),
-            nn.BatchNorm2d(256),
-            nn.LeakyReLU(),
-            
-            nn.Conv2d(256, 128, kernel_size=3, stride=1, padding=1, bias=False),
-            nn.BatchNorm2d(128),
-            nn.LeakyReLU(),
-            
-            nn.Conv2d(128, compressed_channels, kernel_size=3, stride=1, padding=1, bias=False),
-            nn.BatchNorm2d(compressed_channels),
-            nn.LeakyReLU(),
-        )
-        
-        # Decoder
-        self.decoder = nn.Sequential(
-            nn.Conv2d(compressed_channels, 128, kernel_size=3, stride=1, padding=1, bias=False),
-            nn.BatchNorm2d(128),
-            nn.LeakyReLU(),
-            
-            nn.Conv2d(128, 256, kernel_size=3, stride=1, padding=1, bias=False),
-            nn.BatchNorm2d(256),
-            nn.LeakyReLU(),
-            
-            nn.Conv2d(256, input_channels, kernel_size=3, stride=1, padding=1, bias=False),
-            nn.BatchNorm2d(input_channels),
-            nn.Sigmoid(),  # Assuming input features are normalized
-        )
-        
+        self.encoder = nn.Parameter(torch.randn(512, 16))
+        self.decoder = nn.Parameter(torch.randn(16, 512))
+
     def forward(self, x):
-        encoded = self.encoder(x)
-        decoded = self.decoder(encoded)
-        return encoded, decoded
-    
-model_path = "/home/siddharth/siddharth/thesis/3dgs-gradient-backprojection/models/model_epoch_50.pth"  # Update with the path to your saved model
-device = "cuda"
-model = EncoderDecoder(input_channels=512, compressed_channels=16).to(device)
-model.load_state_dict(torch.load(model_path, map_location=device))
-model.eval()  # Set the model to evaluation mode
+        x = x @ self.encoder
+        y = x @ self.decoder
+        return x, y
+
+encoder_decoder = EncoderDecoder().to("cuda")
+encoder_decoder.load_state_dict(torch.load("./encoder_decoder.ckpt"))
 
 
 def torch_to_cv(tensor):
@@ -434,9 +405,16 @@ def create_feature_field_lseg(splats):
     return gaussian_features'''
 
 
-def create_feature_field_lseg(splats, test_images={},batch_count = 1, use_cpu=False):
+def create_feature_field_lseg(splats, embed_dim=512,compress = False, test_images={}, batch_count = 1,use_cpu=False):
     device = "cpu" if use_cpu else "cuda"
 
+    if compress:
+        print(f"Compressing the feature dimension to {embed_dim}")
+        embed_dim=embed_dim
+    else:
+        embed_dim=512
+        print(f"Not compressing, dimension kept is {embed_dim}")
+        
     net = LSegNet(
         backbone="clip_vitl16_384",
         features=256,
@@ -469,18 +447,20 @@ def create_feature_field_lseg(splats, test_images={},batch_count = 1, use_cpu=Fa
     colors.requires_grad = True
     colors_0.requires_grad = True
 
-    gaussian_features = torch.zeros(colors.shape[0], 512, device=colors.device)
+    gaussian_features = torch.zeros(colors.shape[0], embed_dim, device=colors.device)
     gaussian_denoms = torch.ones(colors.shape[0], device=colors.device) * 1e-12
 
     t1 = time.time()
 
-    colors_feats = torch.zeros(colors.shape[0], 512, device=colors.device, requires_grad=True)
+    colors_feats = torch.zeros(colors.shape[0], embed_dim, device=colors.device, requires_grad=True)
     colors_feats_0 = torch.zeros(colors.shape[0], 3, device=colors.device, requires_grad=True)
 
     images = sorted(colmap_project.images.values(), key=lambda x: x.name)
     print(len(images))
     batch_size = math.ceil(len(images) / batch_count) if batch_count > 0 else 1
     print("batch_size", batch_size)
+    pca = PCA(n_components=3)
+    first_time = True
     for batch_start in tqdm(
             range(0, len(images), batch_size),
             desc="Feature backprojection (batches)",
@@ -532,8 +512,31 @@ def create_feature_field_lseg(splats, test_images={},batch_count = 1, use_cpu=Fa
                 # feats = feats.squeeze(-4)
                 # #...............................
                 feats = feats.permute(1, 2, 0)
-                
-                # feats = feats @ encoder_decoder.encoder
+                if compress:
+                    print("comoressing image")
+                    feats = feats @ encoder_decoder.encoder
+
+            
+            # image_original = cv2.cvtColor(image_np, cv2.COLOR_RGB2BGR)  
+            
+            feats_flattened = feats.reshape(-1, embed_dim).detach().cpu().numpy()
+            if first_time:
+                feats_pca = pca.fit_transform(feats_flattened)
+                feats_pca_first_time = feats_pca
+                first_time = False
+            else:
+                feats_pca = pca.transform(feats_flattened)
+            feats_pca = (feats_pca - feats_pca_first_time.min(axis=0))/(feats_pca_first_time.max(axis=0) - feats_pca_first_time.min(axis=0))
+            feats_pca = np.clip(feats_pca, 0, 1)
+            feats_pca = feats_pca.reshape(height, width, 3)
+            
+            
+            combined_image = (feats_pca * 255).astype(np.uint8)
+           
+            # cv2.imshow("feats_pca", (feats_pca * 255).astype(np.uint8))
+            cv2.imshow("combined+pca",combined_image)
+
+            cv2.waitKey(1)
 
             output_for_grad, _, meta = rasterization(
                 means,
@@ -590,14 +593,16 @@ def main(
     # checkpoint: str = "/home/siddharth/siddharth/thesis/3dgs-gradient-backprojection/data/garden/ckpts/ckpt_29999_rank0.pt",  # checkpoint path, can generate from original 3DGS repo
     # data_dir: str = "/home/open/SKV_Mid_Rv/gaussian-splatting/data/outside_IDR_obj_track",  # colmap path
     # checkpoint: str = "/home/open/SKV_Mid_Rv/gaussian-splatting/output/out_side_idr_mehul_track/chkpnt7000.pth",  # checkpoint path, can generate from original 3DGS repo
-    data_dir: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/figurines",  # colmap path
-    checkpoint: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/figurines/chkpnt30000.pth",  # checkpoint path, can generate from original 3DGS repo
-    results_dir: str = "./results/figurines",
+    data_dir: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/teatime",  # colmap path
+    checkpoint: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/teatime/chkpnt30000.pth",  # checkpoint path, can generate from original 3DGS repo
+    results_dir: str = "./results/teatime",
     # results_dir: str = "./results/mehul",  # outpu
     rasterizer: Literal[
         "inria", "gsplat"
     ] = "inria",  # Original or GSplat for checkpoints
     data_factor: int = 4,
+    embed_dim: int=16,
+    compress: bool=True,
 ):
     test_images = {"test_0.jpg", "test_1.jpg", "test_2.jpg", "test_3.jpg", "frame_00131.jpg"} 
     
@@ -615,7 +620,7 @@ def main(
     # sys.exit()
     test_proper_pruning(splats, splats_optimized)
     splats = splats_optimized
-    features = create_feature_field_lseg(splats)
+    features = create_feature_field_lseg(splats,embed_dim,compress,test_images)
     print("features_size", features.shape)
     torch.save(features, f"{results_dir}/features_lseg.pt")
     
