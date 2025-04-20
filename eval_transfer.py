@@ -663,7 +663,7 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
 
 def main(
     
-    data_dir: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/ramen",  # colmap path
+    data_dir: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/te",  # colmap path
     checkpoint: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/ramen/chkpnt30000.pth",  # checkpoint path, can generate from original 3DGS repo
     results_dir: str = "./results/ramen",
 
