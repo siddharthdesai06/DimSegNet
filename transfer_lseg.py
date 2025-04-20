@@ -602,7 +602,7 @@ def main(
     ] = "inria",  # Original or GSplat for checkpoints
     data_factor: int = 4,
     embed_dim: int=16,
-    compress: bool=True,
+    compress: bool=False,
 ):
     test_images = {"test_0.jpg", "test_1.jpg", "test_2.jpg", "test_3.jpg", "frame_00131.jpg"} 
     

@@ -299,8 +299,8 @@ def get_mask3d_lseg(splats, features, prompt, neg_prompt, threshold=None):
     
     text_feat_norm = torch.nn.functional.normalize(text_feat, dim=-1)
     text_feat_norm = text_feat_norm.float() 
-    text_feat_compressed = text_feat_norm @ encoder_decoder.encoder # 512 -> 16
-    text_feat_norm = torch.nn.functional.normalize(text_feat_compressed,dim=-1)
+    # text_feat_compressed = text_feat_norm @ encoder_decoder.encoder # 512 -> 16
+    # text_feat_norm = torch.nn.functional.normalize(text_feat_compressed,dim=-1)
 
     # for dim_redn......................
     print("text_feat_norm",text_feat_norm.shape)
@@ -321,7 +321,7 @@ def get_mask3d_lseg(splats, features, prompt, neg_prompt, threshold=None):
     # sys.exit()
     score = features @ text_feat_norm.T
     print("score shape latest",score.shape)
-    sys.exit()
+    # sys.exit()
        
     # sys.exit()
     mask_3d = score[:, 0] > score[:, 1:].max(dim=1)[0]
@@ -572,7 +572,7 @@ def main(
     test_proper_pruning(splats, splats_optimized)
     splats = splats_optimized
     features = torch.load(f"{results_dir}/features_lseg.pt")
-    mask3d, mask3d_inv = get_mask_3d_lseg_new(splats, features, prompt, neg_prompt)
+    mask3d, mask3d_inv = get_mask3d_lseg(splats, features, prompt, neg_prompt)
     
     # render_to_gif(
     #     f"{results_dir}/extracted.gif",
@@ -590,7 +590,7 @@ def main(
         show_visual_feedback,
         use_checkerboard_background=False,
     )
-    # render_to_gif(f"{results_dir}/deleted.gif", deleted, show_visual_feedback)
+    render_to_gif(f"{results_dir}/deleted.gif", deleted, show_visual_feedback)
 
 
 if __name__ == "__main__":
