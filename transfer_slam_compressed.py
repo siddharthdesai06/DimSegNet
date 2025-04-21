@@ -482,7 +482,7 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
                 detections = results[0].boxes
                 class_indices = detections.cls.int().tolist()
                 bboxes =detections.xyxy.cpu().numpy()
-                print("YOLO Detected Classes:", class_indices)
+                # print("YOLO Detected Classes:", class_indices)
 
                 # print("keep", class_indices)
                 # labels = [CLASSES[i] for i in class_indices]
@@ -508,9 +508,9 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
                     clip_feature_map = clip_extractor.generate_feature_map(image, masks.squeeze(1), class_indices, class_names)
    
                 feats = torch.nn.functional.normalize(torch.tensor(clip_feature_map, device = dev), dim=-1)
-                print("feats shape before",feats.shape)
+                # print("feats shape before",feats.shape)
                 feats = feats @ encoder_decoder.encoder #(512->16)
-                print("feats shape after",feats.shape)
+                # print("feats shape after",feats.shape)
                 image_id+=1
 
             # Backproject features onto gaussians
