@@ -331,6 +331,54 @@ def get_mask3d_yolo(splats, gaussian_features, prompt, neg_prompt, threshold=Non
     
     return mask_3d, mask_3d_inv
 
+from PIL import Image
+def save_mask_from_frame(frame, file_name="output_mask.png", threshold=0.5):
+    grayscale = np.mean(frame, axis=-1).astype(np.uint8)
+    mask = (grayscale).astype(np.uint8)
+    mask_image = Image.fromarray(mask, mode="L")
+    mask_image.save(file_name)
+    print(f"2D mask saved as {file_name}")
+
+def get_2d_mask(splats, test_images, no_sh=True):
+    means = splats["means"]
+    colors_dc = splats["features_dc"]
+    colors_rest = splats["features_rest"]
+    colors = torch.cat([colors_dc, colors_rest], dim=1)
+    if no_sh == True:
+        colors = colors_dc[:, 0, :]
+    opacities = torch.sigmoid(splats["opacity"])
+    scales = torch.exp(splats["scaling"])
+    quats = splats["rotation"]
+    K = splats["camera_matrix"]
+
+    
+    for cam in splats["slam_positions"]:    
+        viewmat = get_viewmat_position_and_rotation(cam["position"], cam["rotation"])
+        output, alphas, meta = rasterization(
+            means,
+            quats,
+            scales,
+            opacities,
+            colors,
+            viewmat[None],
+            K[None],
+            width=K[0, 2] * 2,
+            height=K[1, 2] * 2,
+            sh_degree=3 if not no_sh else None,
+        )
+        frame = np.clip(output[0].detach().cpu().numpy() * 255, 0, 255).astype(np.uint8)
+        print(cam.keys())
+        image_name = cam["id"]
+        print(image_name)
+
+        # frame = np.clip(output[0].detach().cpu().numpy() * 255, 0, 255).astype(np.uint8)
+
+        # Save the 2D mask based on the output image
+        save_mask_from_frame(frame, f"{image_name}+.jpg")
+        # save_mask_from_alphas(alphas[0], f"{image.name}")
+
+
+
 def apply_mask3d(splats, mask3d, mask3d_inverted):
     if mask3d_inverted == None:
         mask3d_inverted = ~mask3d
@@ -438,6 +486,9 @@ def main(
     show_visual_feedback: bool = True,
 
 ):
+    
+    test_images = {"frame_000643.jpg", "frame_000644.jpg","frame_000645.jpg","frame_000646.jpg","test_1.jpg", "test_2.jpg", "test_3.jpg", "frame_00131.jpg"} 
+    
 
     # Compute negative classes dynamically
     if prompt in class_names.values():
@@ -467,6 +518,8 @@ def main(
     # # To debug
     # mask3d[mask3d==False] = True
     extracted, deleted, masked = apply_mask3d(splats, mask3d, mask3d_inv)
+    get_2d_mask(masked, test_images)
+    
     render_to_gif(
         f"{results_dir}/extracted.gif",
         extracted,
