@@ -353,6 +353,10 @@ def get_2d_mask(splats, test_images, no_sh=True):
 
     
     for cam in splats["slam_positions"]:    
+        if cam['id'] not in test_images:
+            print(f"Skipping {cam['id']} as it is train image")
+            continue
+
         viewmat = get_viewmat_position_and_rotation(cam["position"], cam["rotation"])
         output, alphas, meta = rasterization(
             means,
@@ -374,7 +378,7 @@ def get_2d_mask(splats, test_images, no_sh=True):
         # frame = np.clip(output[0].detach().cpu().numpy() * 255, 0, 255).astype(np.uint8)
 
         # Save the 2D mask based on the output image
-        save_mask_from_frame(frame, f"{image_name}+.jpg")
+        save_mask_from_frame(frame, f"{image_name}.jpg")
         # save_mask_from_alphas(alphas[0], f"{image.name}")
 
 
@@ -476,7 +480,7 @@ def main(
     
     json_directory: str = "/home/siddharth/siddharth/thesis/RTG-SLAM/output/dataset/Replica/office0/cameras.json",  # camera json file
     checkpoint: str = "/home/siddharth/siddharth/thesis/RTG-SLAM/output/dataset/Replica/office0/save_model/frame_2000/iter_1139_stable.pth",  # checkpoint path, can generate from original 3DGS repo
-    results_dir: str = "/home/siddharth/siddharth/thesis/my_seg_yolo/output/replica/office0",  # output path
+    results_dir: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/results/replica/office0",  # output path
     
     rasterizer: Literal[
         "inria", "gsplat"
@@ -487,7 +491,10 @@ def main(
 
 ):
     
-    test_images = {"frame_000643.jpg", "frame_000644.jpg","frame_000645.jpg","frame_000646.jpg","test_1.jpg", "test_2.jpg", "test_3.jpg", "frame_00131.jpg"} 
+
+    test_images = [0,78,1488]
+    
+    # test_images = {"frame_000643.jpg", "frame_000644.jpg","frame_000645.jpg","frame_000646.jpg","test_1.jpg", "test_2.jpg", "test_3.jpg", "frame_00131.jpg"} 
     
 
     # Compute negative classes dynamically
