@@ -420,7 +420,7 @@ def test_proper_pruning(splats, splats_after_pruning):
         )
     )
 
-def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_path, embed_dim=512, batch_count=1, use_cpu=False):
+def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_path, embed_dim=512, test_images = [],batch_count=1, use_cpu=False):
     device = "cpu" if use_cpu else "cuda"
 
     yolo_model = YOLO('yolov12x.pt')
@@ -454,6 +454,10 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
     slam_positions = splats["slam_positions"]
     image_id = 0
     for cam in tqdm(splats["slam_positions"], desc="Feature backprojection"):
+            if cam['id'] in test_images:
+                print(f"Skipping {cam['id']} as it is test image")
+                continue
+            
             viewmat = get_viewmat_position_and_rotation(cam["position"], cam["rotation"])
             width = int(K[0, 2] * 2)
             height = int(K[1, 2] * 2)
@@ -567,7 +571,7 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
 def main(
     json_directory: str = "/home/siddharth/siddharth/thesis/RTG-SLAM/output/dataset/Replica/office0/cameras.json",  # camera json file
     checkpoint: str = "/home/siddharth/siddharth/thesis/RTG-SLAM/output/dataset/Replica/office0/save_model/frame_2000/iter_1139_stable.pth",  # checkpoint path, can generate from original 3DGS repo
-    results_dir: str = "/home/siddharth/siddharth/thesis/my_seg_yolo/output/replica/office0",  # output path
+    results_dir: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/results/replica/office0",  # output path
     sam_checkpoint: str = "sam_vit_h_4b8939.pth",
     clip_embedding_path: str = "clip_coco_embeddings_hf.npy",
     rasterizer: Literal[
@@ -577,6 +581,7 @@ def main(
     embed_dim: int=16, # the dimension to which you trained enc-dec
 ):
 
+    test_images = [0,78,1488]
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is required for this demo")
 
@@ -590,7 +595,7 @@ def main(
     # test_proper_pruning(splats, splats_optimized)
     # splats = splats_optimized
 
-    features = create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embedding_path,embed_dim)
+    features = create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embedding_path,embed_dim, test_images)
 
     print(features.shape)
     torch.save(features, f"{results_dir}/features.pt")
