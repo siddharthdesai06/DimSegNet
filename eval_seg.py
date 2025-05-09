@@ -278,7 +278,6 @@ def test_proper_pruning(splats, splats_after_pruning):
         )
     )
 
-
 def get_mask3d_yolo(splats, gaussian_features, prompt, neg_prompt, threshold=None):
     # Load CLIP model and processor
     gaussian_features=torch.nn.functional.normalize(gaussian_features,dim=-1)
