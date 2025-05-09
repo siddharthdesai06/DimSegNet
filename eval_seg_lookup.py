@@ -278,7 +278,6 @@ def test_proper_pruning(splats, splats_after_pruning):
         )
     )
 
-
 def get_mask3d_yolo(splats, gaussian_features, prompt, neg_prompt, threshold=None):
     # Load CLIP model and processor
     gaussian_features=torch.nn.functional.normalize(gaussian_features,dim=-1)
@@ -343,10 +342,24 @@ def get_mask3d_yolo(splats, gaussian_features, prompt, neg_prompt, threshold=Non
 
 #     return extracted, deleted, masked
 
-def get_mask3d_from_clip_coco_dict(gaussian_features, class_embeddings_path, prompt, threshold=None):
+def get_mask3d_from_clip_coco_dict(gaussian_features, class_embeddings_path, prompt, neg_prompt,threshold=None):
     # Normalize Gaussian features
+    gaussian_features = gaussian_features.float() 
     gaussian_features = torch.nn.functional.normalize(gaussian_features, dim=-1)
 
+    clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to("cuda")
+    clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+    
+    print(gaussian_features.shape)
+
+    # Process text prompts
+    prompts = [prompt] + neg_prompt.split(";")
+
+    inputs = clip_processor(text=prompts, return_tensors="pt", padding=True)
+    text_feat = clip_model.get_text_features(**inputs)  # Shape: [num_queries, 512]
+    text_feat_norm = torch.nn.functional.normalize(text_feat, dim=-1)
+    # print("size of text_feat", text_feat_norm.shape)
+    
     # Load the class embeddings (dict: name -> np.array)
     loaded_dict = np.load(class_embeddings_path, allow_pickle=True).item()
 
@@ -354,33 +367,19 @@ def get_mask3d_from_clip_coco_dict(gaussian_features, class_embeddings_path, pro
     class_names = list(loaded_dict.keys())
     class_embeds = torch.tensor(np.stack([loaded_dict[name] for name in class_names]), dtype=torch.float32).to(gaussian_features.device)
     class_embeds = torch.nn.functional.normalize(class_embeds, dim=-1)
-
-    # Lowercase and strip input prompt
-    prompt = prompt.lower().strip()
-
-    # Check and get the index of the prompt class
-    try:
-        target_idx = class_names.index(prompt)
-    except ValueError:
-        raise ValueError(f"Prompt '{prompt}' not found in the class embeddings.")
-
-    # Convert class name → ID
-    name2id = {v.lower(): k for k, v in class_names_dict.items()}
-    if prompt not in name2id:
-        raise ValueError(f"Prompt '{prompt}' not found in the provided class name mapping.")
-    target_class_id = name2id[prompt]
-
+    # print("size of class embeds", class_embeds.shape)
+    
     # Compute similarity
-    scores = gaussian_features @ class_embeds.T  # [num_gaussians, num_classes]
-    predicted_class_idx = scores.argmax(dim=1)
-
-    # Mask: Gaussians matching the prompt class
-    mask_3d = predicted_class_idx == target_idx
-    if threshold is not None:
-        mask_3d = mask_3d & (scores[:, target_idx] > threshold)
-
-    mask_3d_inv = ~mask_3d
-    return mask_3d, mask_3d_inv, target_class_id
+    score = text_feat_norm @ class_embeds.T  # [num_gaussians, num_classes]
+    # predicted_class_idx = score[:, 0] > score[:, 1:].max(dim=1)[0]
+    votes = score.argmax(dim=1)[0] 
+    
+    # print("votes",votes)
+    
+    predicted_class_idx = votes.item()
+    print("predicted_class_idx======>>",predicted_class_idx)
+    # sys.exit()
+    return predicted_class_idx
 
 def apply_mask3d_by_id(splats, features, target_id):
     # Create boolean mask where feature ID matches the target
@@ -533,7 +532,7 @@ def main(
     rasterizer: Literal[
     "inria", "gsplat"
     ] = "inria",  # Original or gsplat for checkpoints
-    prompt: str = "dining table", # the one to be extracted or deleted
+    prompt: str = "teddy bear", # the one to be extracted or deleted
     data_factor: int = 4,
     show_visual_feedback: bool = True,
 ):
@@ -567,10 +566,11 @@ def main(
     print("features shape================>>",features.shape)
     # mask3d, mask3d_inv = get_mask3d_yolo(splats, features,prompt, neg_prompt, test_images)
 
-    mask_3d, mask_3d_inv, target_id = get_mask3d_from_clip_coco_dict(
+    target_id = get_mask3d_from_clip_coco_dict(
     features,
-    class_embeddings_path="clip_coco_embeddings.npy",
-    prompt=prompt
+    class_embeddings_path="clip_coco_embeddings_hf.npy",
+    prompt=prompt,
+    neg_prompt = neg_prompt,
     )
 
     extracted, deleted, masked = apply_mask3d_by_id(splats, features, target_id)
