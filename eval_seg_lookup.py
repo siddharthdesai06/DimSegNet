@@ -317,12 +317,42 @@ def get_mask3d_yolo(splats, gaussian_features, prompt, neg_prompt, threshold=Non
     
     return mask_3d, mask_3d_inv
 
-def apply_mask3d(splats, mask3d, mask3d_inverted):
-    if mask3d_inverted == None:
-        mask3d_inverted = ~mask3d
+# def apply_mask3d(splats, mask3d, mask3d_inverted):
+#     if mask3d_inverted == None:
+#         mask3d_inverted = ~mask3d
+#     extracted = splats.copy()
+#     deleted = splats.copy()
+#     masked = splats.copy()
+#     extracted["means"] = extracted["means"][mask3d]
+#     extracted["features_dc"] = extracted["features_dc"][mask3d]
+#     extracted["features_rest"] = extracted["features_rest"][mask3d]
+#     extracted["scaling"] = extracted["scaling"][mask3d]
+#     extracted["rotation"] = extracted["rotation"][mask3d]
+#     extracted["opacity"] = extracted["opacity"][mask3d]
+
+#     deleted["means"] = deleted["means"][mask3d_inverted]
+#     deleted["features_dc"] = deleted["features_dc"][mask3d_inverted]
+#     deleted["features_rest"] = deleted["features_rest"][mask3d_inverted]
+#     deleted["scaling"] = deleted["scaling"][mask3d_inverted]
+#     deleted["rotation"] = deleted["rotation"][mask3d_inverted]
+#     deleted["opacity"] = deleted["opacity"][mask3d_inverted]
+
+#     masked["features_dc"][mask3d] =  1#(1 - 0.5) / 0.2820947917738781
+#     masked["features_dc"][~mask3d] = 0#(0 - 0.5) / 0.2820947917738781
+#     masked["features_rest"][~mask3d] = 0
+
+#     return extracted, deleted, masked
+
+def apply_mask3d_by_id(splats, features, target_id):
+    # Create boolean mask where feature ID matches the target
+    mask3d = (features == target_id)
+    mask3d_inverted = ~mask3d
+
     extracted = splats.copy()
     deleted = splats.copy()
     masked = splats.copy()
+
+    # Apply the mask to extract
     extracted["means"] = extracted["means"][mask3d]
     extracted["features_dc"] = extracted["features_dc"][mask3d]
     extracted["features_rest"] = extracted["features_rest"][mask3d]
@@ -330,6 +360,7 @@ def apply_mask3d(splats, mask3d, mask3d_inverted):
     extracted["rotation"] = extracted["rotation"][mask3d]
     extracted["opacity"] = extracted["opacity"][mask3d]
 
+    # Apply inverse mask to deleted
     deleted["means"] = deleted["means"][mask3d_inverted]
     deleted["features_dc"] = deleted["features_dc"][mask3d_inverted]
     deleted["features_rest"] = deleted["features_rest"][mask3d_inverted]
@@ -337,9 +368,10 @@ def apply_mask3d(splats, mask3d, mask3d_inverted):
     deleted["rotation"] = deleted["rotation"][mask3d_inverted]
     deleted["opacity"] = deleted["opacity"][mask3d_inverted]
 
-    masked["features_dc"][mask3d] =  1#(1 - 0.5) / 0.2820947917738781
-    masked["features_dc"][~mask3d] = 0#(0 - 0.5) / 0.2820947917738781
-    masked["features_rest"][~mask3d] = 0
+    # Masked splats just show/hide based on ID match
+    masked["features_dc"][mask3d] = 1
+    masked["features_dc"][mask3d_inverted] = 0
+    masked["features_rest"][mask3d_inverted] = 0
 
     return extracted, deleted, masked
 
@@ -453,9 +485,9 @@ def render_to_gif(
         cv2.destroyAllWindows()
 
 def main(
-    data_dir: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/figurines",  # colmap path
-    checkpoint: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/figurines/chkpnt30000.pth",  # checkpoint path, can generate from original 3DGS repo
-    results_dir: str = "./results/figurines",
+    data_dir: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/teatime",  # colmap path
+    checkpoint: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/teatime/chkpnt30000.pth",  # checkpoint path, can generate from original 3DGS repo
+    results_dir: str = "./results/teatime",
     # data_dir: str = "/home/siddharth/siddharth/thesis/3dgs-gradient-backprojection/data/garden",  # colmap path
     # checkpoint: str = "/home/siddharth/siddharth/thesis/3dgs-gradient-backprojection/data/garden/ckpts/ckpt_29999_rank0.pt",  # checkpoint path, can generate from original 3DGS repo
     # results_dir: str = "./results/garden",  # output
@@ -496,9 +528,9 @@ def main(
     features = torch.load(f"{results_dir}/features.pt")
     print("features shape================>>",features.shape)
     # mask3d, mask3d_inv = get_mask3d_yolo(splats, features,prompt, neg_prompt, test_images)
-    mask3d, mask3d_inv = get_mask3d_yolo(splats, features,prompt, neg_prompt)
+    # mask3d, mask3d_inv = get_mask3d_yolo(splats, features,prompt, neg_prompt)
     
-    extracted, deleted, masked = apply_mask3d(splats, mask3d, mask3d_inv)
+    extracted, deleted, masked = apply_mask3d_by_id(splats, features, 60)
     
     get_2d_mask(masked, test_images)
 
