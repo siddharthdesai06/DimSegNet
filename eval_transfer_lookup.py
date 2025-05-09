@@ -457,12 +457,14 @@ def test_proper_pruning(splats, splats_after_pruning):
     )
 
 
-def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_path, embed_dim=512, compress = False, test_images={},batch_count=1, use_cpu=False):
+def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_path, embed_dim=512, compress = False, lookup = False,test_images={},batch_count=1, use_cpu=False):
     device = "cpu" if use_cpu else "cuda"
 
     if compress:
         print(f"Compressing the feature dimension to {embed_dim}")
         embed_dim=embed_dim
+    elif lookup:
+        embed_dim=81
     else:
         embed_dim=512
         print(f"Not compressing, dimension kept is {embed_dim}")
@@ -539,7 +541,7 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
                 # print("YOLO Detected Classes:", class_indices)
                 labels = [class_names[i] for i in class_indices]
                 unique_labels.update(labels)
-                print(labels)
+                # print(labels)
 
                 # Use SAM to get masks
                 segmenter.set_image(image_np)
@@ -571,7 +573,8 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
                     
 
 #---------------------------------------------------------------------------
-                # print("clip_feature_map_shape",clip_feature_map.shape)
+                # print("clip_feature_map_shape",clip_id_map.shape)
+                
                 # print("before",clip_feature_map[18,34])
                 clip_id_map = torch.tensor(clip_id_map, device = dev).long()
                 feats = torch.nn.functional.one_hot(clip_id_map, len(class_names)).float()
@@ -695,9 +698,9 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
 
 def main(
     
-    data_dir: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/figurines",  # colmap path
-    checkpoint: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/figurines/chkpnt30000.pth",  # checkpoint path, can generate from original 3DGS repo
-    results_dir: str = "./results/figurines",
+    data_dir: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/teatime",  # colmap path
+    checkpoint: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/teatime/chkpnt30000.pth",  # checkpoint path, can generate from original 3DGS repo
+    results_dir: str = "./results/teatime",
 
     # data_dir: str = "/home/siddharth/siddharth/thesis/3dgs-gradient-backprojection/data/garden",  # colmap path
     # checkpoint: str = "/home/siddharth/siddharth/thesis/3dgs-gradient-backprojection/data/garden/ckpts/ckpt_29999_rank0.pt",  # checkpoint path, can generate from original 3DGS repo
@@ -711,6 +714,7 @@ def main(
     data_factor: int = 4,
     embed_dim: int=16,
     compress: bool=False,
+    lookup:bool = True
    
 ):
     test_images = {"test_0.jpg", "test_1.jpg", "test_2.jpg", "test_3.jpg", "frame_00131.jpg"} 
@@ -730,10 +734,16 @@ def main(
     splats = splats_optimized
     # features = create_feature_field_detr_sam_clip(splats, sam_checkpoint, clip_embedding_path)
 
-    features = create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embedding_path,embed_dim,compress, test_images)
+    features = create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embedding_path,embed_dim,compress, lookup, test_images)
 
     print("features_size", features.shape)
-    
+    # If one-hot encoded, convert to class indices before saving
+    if features.shape[-1] == 81:  # Assuming 81 is the one-hot dimension
+        print("Converting one-hot features to class IDs before saving.")
+        features = torch.argmax(features, dim=-1) 
+
+    print("features_size_later", features.shape)
+        
     torch.save(features, f"{results_dir}/features.pt")
 
 if __name__ == "__main__":
