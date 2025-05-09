@@ -343,6 +343,45 @@ def get_mask3d_yolo(splats, gaussian_features, prompt, neg_prompt, threshold=Non
 
 #     return extracted, deleted, masked
 
+def get_mask3d_from_clip_coco_dict(gaussian_features, class_embeddings_path, prompt, threshold=None):
+    # Normalize Gaussian features
+    gaussian_features = torch.nn.functional.normalize(gaussian_features, dim=-1)
+
+    # Load the class embeddings (dict: name -> np.array)
+    loaded_dict = np.load(class_embeddings_path, allow_pickle=True).item()
+
+    # Convert to list of names and stack embeddings
+    class_names = list(loaded_dict.keys())
+    class_embeds = torch.tensor(np.stack([loaded_dict[name] for name in class_names]), dtype=torch.float32).to(gaussian_features.device)
+    class_embeds = torch.nn.functional.normalize(class_embeds, dim=-1)
+
+    # Lowercase and strip input prompt
+    prompt = prompt.lower().strip()
+
+    # Check and get the index of the prompt class
+    try:
+        target_idx = class_names.index(prompt)
+    except ValueError:
+        raise ValueError(f"Prompt '{prompt}' not found in the class embeddings.")
+
+    # Convert class name → ID
+    name2id = {v.lower(): k for k, v in class_names_dict.items()}
+    if prompt not in name2id:
+        raise ValueError(f"Prompt '{prompt}' not found in the provided class name mapping.")
+    target_class_id = name2id[prompt]
+
+    # Compute similarity
+    scores = gaussian_features @ class_embeds.T  # [num_gaussians, num_classes]
+    predicted_class_idx = scores.argmax(dim=1)
+
+    # Mask: Gaussians matching the prompt class
+    mask_3d = predicted_class_idx == target_idx
+    if threshold is not None:
+        mask_3d = mask_3d & (scores[:, target_idx] > threshold)
+
+    mask_3d_inv = ~mask_3d
+    return mask_3d, mask_3d_inv, target_class_id
+
 def apply_mask3d_by_id(splats, features, target_id):
     # Create boolean mask where feature ID matches the target
     mask3d = (features == target_id)
@@ -500,8 +539,7 @@ def main(
 ):
 
     test_images = {"test_0.jpg", "test_1.jpg", "test_2.jpg", "test_3.jpg", "frame_00131.jpg"} 
-    # test_images = {"test_0.jpg", "test_1.jpg", "test_2.jpg","test_3.jpg"} 
-     # # Compute negative classes dynamically
+
     if prompt in class_names.values():
         neg_classes =  [name for name in class_names.values() if name != prompt] + ["others"]
     else:
@@ -528,9 +566,14 @@ def main(
     features = torch.load(f"{results_dir}/features.pt")
     print("features shape================>>",features.shape)
     # mask3d, mask3d_inv = get_mask3d_yolo(splats, features,prompt, neg_prompt, test_images)
-    # mask3d, mask3d_inv = get_mask3d_yolo(splats, features,prompt, neg_prompt)
-    
-    extracted, deleted, masked = apply_mask3d_by_id(splats, features, 60)
+
+    mask_3d, mask_3d_inv, target_id = get_mask3d_from_clip_coco_dict(
+    features,
+    class_embeddings_path="clip_coco_embeddings.npy",
+    prompt=prompt
+    )
+
+    extracted, deleted, masked = apply_mask3d_by_id(splats, features, target_id)
     
     get_2d_mask(masked, test_images)
 
