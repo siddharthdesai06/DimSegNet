@@ -21,8 +21,8 @@ from transformers import CLIPProcessor, CLIPModel
 class EncoderDecoder(nn.Module):
     def __init__(self):
         super(EncoderDecoder, self).__init__()
-        self.encoder = nn.Parameter(torch.randn(512, 16))
-        self.decoder = nn.Parameter(torch.randn(16, 512))
+        self.encoder = nn.Parameter(torch.randn(512, 64))
+        self.decoder = nn.Parameter(torch.randn(64, 512))
 
     def forward(self, x):
         x = x @ self.encoder
@@ -31,7 +31,7 @@ class EncoderDecoder(nn.Module):
 
 
 encoder_decoder = EncoderDecoder().to("cuda")
-encoder_decoder.load_state_dict(torch.load("/home/siddharth/siddharth/thesis/my_seg_yolo/enc_dec_model/encoder_decoder.ckpt"))
+encoder_decoder.load_state_dict(torch.load("./encoder_decoder.ckpt"))
 
 
 class_names = {
@@ -314,8 +314,8 @@ def get_mask3d_yolo(splats, gaussian_features, prompt, neg_prompt, threshold=Non
     text_feat_norm = torch.nn.functional.normalize(text_feat, p=2, dim=1)
     
     # Compress text prompts 512->16
-    # text_feat_compressed = text_feat_norm@encoder_decoder.encoder # 512 -> 16
-    # text_feat_norm = torch.nn.functional.normalize(text_feat_compressed,p=2,dim=1)
+    text_feat_compressed = text_feat_norm@encoder_decoder.encoder # 512 -> 16
+    text_feat_norm = torch.nn.functional.normalize(text_feat_compressed,p=2,dim=1)
 
     # Compute similarity scores
     score = gaussian_features @ text_feat_norm.T
