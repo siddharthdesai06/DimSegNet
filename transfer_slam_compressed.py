@@ -482,7 +482,7 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
                 image = Image.fromarray((image_np * 255).astype(np.uint8)) 
 
                 # Run yolo to get bounding boxes and class predictions
-                results = yolo_model(image)
+                results = yolo_model(image, verbose = False)
                 detections = results[0].boxes
                 class_indices = detections.cls.int().tolist()
                 bboxes =detections.xyxy.cpu().numpy()
