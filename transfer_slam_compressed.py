@@ -420,7 +420,15 @@ def test_proper_pruning(splats, splats_after_pruning):
         )
     )
 
-def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_path, embed_dim=512, test_images = [],batch_count=1, use_cpu=False):
+def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_path, embed_dim=512, compress = False,test_images = [],batch_count=1, use_cpu=False):
+    if compress:
+        print(f"Compressing the feature dimension to {embed_dim}")
+        embed_dim=embed_dim
+    else:
+        embed_dim=512
+        print(f"Not compressing, dimension kept is {embed_dim}")
+    
+    
     device = "cpu" if use_cpu else "cuda"
 
     yolo_model = YOLO('yolov12x.pt')
@@ -513,7 +521,8 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
    
                 feats = torch.nn.functional.normalize(torch.tensor(clip_feature_map, device = dev), dim=-1)
                 # print("feats shape before",feats.shape)
-                feats = feats @ encoder_decoder.encoder #(512->16)
+                if compress:
+                    feats = feats @ encoder_decoder.encoder #(512->16)
                 # print("feats shape after",feats.shape)
                 image_id+=1
 
@@ -579,6 +588,7 @@ def main(
     ] = "inria",  # Original or GSplat for checkpoints
     data_factor: int = 4,
     embed_dim: int=16, # the dimension to which you trained enc-dec
+    compress: bool=False,
 ):
 
     test_images = [0,78,1488]
@@ -595,7 +605,7 @@ def main(
     # test_proper_pruning(splats, splats_optimized)
     # splats = splats_optimized
 
-    features = create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embedding_path,embed_dim, test_images)
+    features = create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embedding_path,embed_dim, compress,test_images)
 
     print(features.shape)
     torch.save(features, f"{results_dir}/features.pt")

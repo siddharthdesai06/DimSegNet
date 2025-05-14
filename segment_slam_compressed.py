@@ -485,7 +485,7 @@ def main(
     rasterizer: Literal[
         "inria", "gsplat"
     ] = "inria",  # Original or gsplat for checkpoints
-    prompt: str = "dining table", # the one to be extracted or deleted
+    prompt: str = "chair", # the one to be extracted or deleted
     data_factor: int = 4,
     show_visual_feedback: bool = True,
 
@@ -527,14 +527,14 @@ def main(
     extracted, deleted, masked = apply_mask3d(splats, mask3d, mask3d_inv)
     get_2d_mask(masked, test_images)
     
-    render_to_gif(
-        f"{results_dir}/extracted.gif",
-        extracted,
-        show_visual_feedback,
-        use_checkerboard_background=False,
-        use_white_background=False
-    )
-    render_to_gif(f"{results_dir}/deleted.gif", deleted, show_visual_feedback)
+    # render_to_gif(
+    #     f"{results_dir}/extracted.gif",
+    #     extracted,
+    #     show_visual_feedback,
+    #     use_checkerboard_background=False,
+    #     use_white_background=False
+    # )
+    # render_to_gif(f"{results_dir}/deleted.gif", deleted, show_visual_feedback)
 
 
 if __name__ == "__main__":

@@ -494,7 +494,7 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
                 # image_tensor = output.permute(0, 3, 1, 2).to(device)
 
                 alpha = alphas[0].detach().cpu().numpy()
-                cv2.imshow("Alpha", alpha)
+                # cv2.imshow("Alpha", alpha)
                 
                 # Convert rasterized output to PIL image
                 image_np = output[0].cpu().numpy()  
@@ -509,7 +509,7 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
                 # print("YOLO Detected Classes:", class_indices)
                 labels = [class_names[i] for i in class_indices]
                 unique_labels.update(labels)
-                print(labels)
+                # print(labels)
 
                 # Use SAM to get masks
                 segmenter.set_image(image_np)
@@ -537,7 +537,7 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
                         image_np = image_np.astype(np.float32)
                     # exit()
                     image_np = np.ascontiguousarray(image_np)
-                    cv2.imshow("Image with mask", image_np)
+                    # cv2.imshow("Image with mask", image_np)
                     
 
 #---------------------------------------------------------------------------
@@ -550,7 +550,7 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
                 # sys.exit()
 #----------------------------------------------------------------
 
-                print("feats_feature_map_shape",feats.shape)
+                # print("feats_feature_map_shape",feats.shape)
                 # sys.exit()
                 # for 512->16 
                 if compress:
@@ -558,26 +558,26 @@ def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_p
         
                 image_id+=1
 
-            image_original = cv2.cvtColor(image_np, cv2.COLOR_RGB2BGR)  
-            print("Final Feats shape", feats.shape)
-            feats_flattened = feats.reshape(-1, embed_dim).detach().cpu().numpy()
-            if first_time:
-                feats_pca = pca.fit_transform(feats_flattened)
-                feats_pca_first_time = feats_pca
-                first_time = False
-            else:
-                feats_pca = pca.transform(feats_flattened)
-            feats_pca = (feats_pca - feats_pca_first_time.min(axis=0))/(feats_pca_first_time.max(axis=0) - feats_pca_first_time.min(axis=0))
-            feats_pca = np.clip(feats_pca, 0, 1)
-            feats_pca = feats_pca.reshape(height, width, 3)
+            # image_original = cv2.cvtColor(image_np, cv2.COLOR_RGB2BGR)  
+            # print("Final Feats shape", feats.shape)
+            # feats_flattened = feats.reshape(-1, embed_dim).detach().cpu().numpy()
+            # if first_time:
+            #     feats_pca = pca.fit_transform(feats_flattened)
+            #     feats_pca_first_time = feats_pca
+            #     first_time = False
+            # else:
+            #     feats_pca = pca.transform(feats_flattened)
+            # feats_pca = (feats_pca - feats_pca_first_time.min(axis=0))/(feats_pca_first_time.max(axis=0) - feats_pca_first_time.min(axis=0))
+            # feats_pca = np.clip(feats_pca, 0, 1)
+            # feats_pca = feats_pca.reshape(height, width, 3)
             
             
-            combined_image = np.hstack((image_original,(feats_pca * 255).astype(np.uint8)))
+            # combined_image = np.hstack((image_original,(feats_pca * 255).astype(np.uint8)))
            
             # cv2.imshow("feats_pca", (feats_pca * 255).astype(np.uint8))
-            cv2.imshow("combined+pca",combined_image)
+            # cv2.imshow("combined+pca",combined_image)
 
-            cv2.waitKey(1)
+            # cv2.waitKey(1)
 
             if flag:
                 continue
@@ -678,7 +678,7 @@ def main(
     ] = "inria",  # Original or GSplat for checkpoints
     data_factor: int = 4,
     embed_dim: int=16,
-    compress: bool=True,
+    compress: bool=False,
    
 ):
     test_images = {"test_0.jpg", "test_1.jpg", "test_2.jpg", "test_3.jpg", "frame_00131.jpg"} 
@@ -693,7 +693,7 @@ def main(
     )
 
     splats_optimized = prune_by_gradients(splats)
-    print("Prunign done")
+    # print("Prunign done")
     test_proper_pruning(splats, splats_optimized)
     splats = splats_optimized
     # features = create_feature_field_detr_sam_clip(splats, sam_checkpoint, clip_embedding_path)
