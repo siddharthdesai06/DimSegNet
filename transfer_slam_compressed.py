@@ -34,8 +34,8 @@ dev = "cuda"
 class EncoderDecoder(nn.Module):
     def __init__(self):
         super(EncoderDecoder, self).__init__()
-        self.encoder = nn.Parameter(torch.randn(512, 64))
-        self.decoder = nn.Parameter(torch.randn(64, 512))
+        self.encoder = nn.Parameter(torch.randn(512, 16))
+        self.decoder = nn.Parameter(torch.randn(16, 512))
 
     def forward(self, x):
         x = x @ self.encoder
@@ -587,7 +587,7 @@ def main(
         "inria", "gsplat"
     ] = "inria",  # Original or GSplat for checkpoints
     data_factor: int = 4,
-    embed_dim: int=64, # the dimension to which you trained enc-dec
+    embed_dim: int=16, # the dimension to which you trained enc-dec
     compress: bool=True,
 ):
 
