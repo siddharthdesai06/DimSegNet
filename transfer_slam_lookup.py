@@ -446,10 +446,12 @@ def test_proper_pruning(splats, splats_after_pruning):
         )
     )
 
-def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_path, embed_dim=512, compress = False,test_images = [],batch_count=1, use_cpu=False):
+def create_feature_field_yolo_sam_clip(splats, sam_checkpoint, clip_embeddings_path, embed_dim=512, compress = False, lookup = True, test_images = [],batch_count=1, use_cpu=False):
     if compress:
         print(f"Compressing the feature dimension to {embed_dim}")
         embed_dim=embed_dim
+    elif lookup:
+        embed_dim=81
     else:
         embed_dim=512
         print(f"Not compressing, dimension kept is {embed_dim}")
