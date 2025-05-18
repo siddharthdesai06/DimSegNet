@@ -15,6 +15,7 @@ matplotlib.use("TkAgg")
 import json
 import sys
 import torch.nn as nn
+import time
 
 from transformers import CLIPProcessor, CLIPModel
 
@@ -521,6 +522,7 @@ def main(
     # splats = splats_optimized
 
     features = torch.load(f"{results_dir}/features.pt")
+    tt = time.time()
     mask3d, mask3d_inv = get_mask3d_yolo(splats, features, prompt, neg_prompt)
     # # To debug
     # mask3d[mask3d==False] = True

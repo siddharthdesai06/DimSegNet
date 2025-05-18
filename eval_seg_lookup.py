@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 from PIL import Image
 import sys
 import torch.nn as nn
-
+import time
 
 from PIL import Image
 import numpy as np
@@ -565,26 +565,28 @@ def main(
     features = torch.load(f"{results_dir}/features.pt")
     print("features shape================>>",features.shape)
     # mask3d, mask3d_inv = get_mask3d_yolo(splats, features,prompt, neg_prompt, test_images)
+    tt = time.time()
+    # target_id = get_mask3d_from_clip_coco_dict(
+    # features,
+    # class_embeddings_path="clip_coco_embeddings_hf.npy",
+    # prompt=prompt,
+    # neg_prompt = neg_prompt,
+    # )
 
-    target_id = get_mask3d_from_clip_coco_dict(
-    features,
-    class_embeddings_path="clip_coco_embeddings_hf.npy",
-    prompt=prompt,
-    neg_prompt = neg_prompt,
-    )
-
-    extracted, deleted, masked = apply_mask3d_by_id(splats, features, target_id)
+    extracted, deleted, masked = apply_mask3d_by_id(splats, features, 77)
     
-    get_2d_mask(masked, test_images)
+    print("inference time===>", time.time()-tt)
 
-    render_to_gif(
-        f"{results_dir}/extracted.gif",
-        extracted,
-        show_visual_feedback,
-        # use_checkerboard_background=True,
-        # use_white_background=True
-    )
-    render_to_gif(f"{results_dir}/deleted.gif", deleted, show_visual_feedback)
+    # get_2d_mask(masked, test_images)
+
+    # render_to_gif(
+    #     f"{results_dir}/extracted.gif",
+    #     extracted,
+    #     show_visual_feedback,
+    #     # use_checkerboard_background=True,
+    #     # use_white_background=True
+    # )
+    # render_to_gif(f"{results_dir}/deleted.gif", deleted, show_visual_feedback)
 
 
 if __name__ == "__main__":
