@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 from PIL import Image
 import sys
 import torch.nn as nn
+import time
 
 
 from PIL import Image
@@ -278,7 +279,7 @@ def test_proper_pruning(splats, splats_after_pruning):
         )
     )
 
-def get_mask3d_yolo(splats, gaussian_features, prompt, neg_prompt, threshold=None):
+def get_mask3d_yolo(splats, gaussian_features, prompt, neg_prompt, compress = False,threshold=None):
     # Load CLIP model and processor
     gaussian_features=torch.nn.functional.normalize(gaussian_features,dim=-1)
     
@@ -295,12 +296,14 @@ def get_mask3d_yolo(splats, gaussian_features, prompt, neg_prompt, threshold=Non
     text_feat_norm = torch.nn.functional.normalize(text_feat, dim=-1)
 
     # # Dim redn
-    print("size of text_feat", text_feat_norm[0])
+    # print("size of text_feat", text_feat_norm[0])
     
-    text_feat_compressed = text_feat_norm @ encoder_decoder.encoder # 512 -> 16
-    print("size of text_feat_compressewed", text_feat_compressed[0])
+    if compress:
+        text_feat_compressed = text_feat_norm @ encoder_decoder.encoder
+        text_feat_norm = torch.nn.functional.normalize(text_feat_compressed,dim=-1)
+        # 512 -> 16
+    # print("size of text_feat_compressewed", text_feat_compressed[0])
     # sys.exit()
-    text_feat_norm = torch.nn.functional.normalize(text_feat_compressed,dim=-1)
 
     # Compute similarity scores
     score = gaussian_features @ text_feat_norm.T
@@ -452,9 +455,9 @@ def render_to_gif(
         cv2.destroyAllWindows()
 
 def main(
-    data_dir: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/figurines",  # colmap path
-    checkpoint: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/figurines/chkpnt30000.pth",  # checkpoint path, can generate from original 3DGS repo
-    results_dir: str = "./results/figurines",
+    data_dir: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/teatime",  # colmap path
+    checkpoint: str = "/home/siddharth/siddharth/thesis/Yolo_segmentation/eval_datasets/teatime/chkpnt30000.pth",  # checkpoint path, can generate from original 3DGS repo
+    results_dir: str = "./results/teatime",
     # data_dir: str = "/home/siddharth/siddharth/thesis/3dgs-gradient-backprojection/data/garden",  # colmap path
     # checkpoint: str = "/home/siddharth/siddharth/thesis/3dgs-gradient-backprojection/data/garden/ckpts/ckpt_29999_rank0.pt",  # checkpoint path, can generate from original 3DGS repo
     # results_dir: str = "./results/garden",  # output
@@ -464,6 +467,7 @@ def main(
     prompt: str = "dining table", # the one to be extracted or deleted
     data_factor: int = 4,
     show_visual_feedback: bool = True,
+    compress:bool =True
 ):
 
     test_images = {"test_0.jpg", "test_1.jpg", "test_2.jpg", "test_3.jpg", "frame_00131.jpg"} 
@@ -493,22 +497,24 @@ def main(
     splats = splats_optimized
 
     features = torch.load(f"{results_dir}/features.pt")
+    
     print("features shape================>>",features.shape)
     # mask3d, mask3d_inv = get_mask3d_yolo(splats, features,prompt, neg_prompt, test_images)
-    mask3d, mask3d_inv = get_mask3d_yolo(splats, features,prompt, neg_prompt)
+    tt = time.time()
+    mask3d, mask3d_inv = get_mask3d_yolo(splats, features,prompt, neg_prompt, compress)
     
     extracted, deleted, masked = apply_mask3d(splats, mask3d, mask3d_inv)
+    print("inference time===>", time.time()-tt)
+    # get_2d_mask(masked, test_images)
     
-    get_2d_mask(masked, test_images)
-
-    render_to_gif(
-        f"{results_dir}/extracted.gif",
-        extracted,
-        show_visual_feedback,
-        # use_checkerboard_background=True,
-        # use_white_background=True
-    )
-    render_to_gif(f"{results_dir}/deleted.gif", deleted, show_visual_feedback)
+    # render_to_gif(
+    #     f"{results_dir}/extracted.gif",
+    #     extracted,
+    #     show_visual_feedback,
+    #     # use_checkerboard_background=True,
+    #     # use_white_background=True
+    # )
+    # render_to_gif(f"{results_dir}/deleted.gif", deleted, show_visual_feedback)
 
 
 if __name__ == "__main__":

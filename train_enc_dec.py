@@ -59,8 +59,8 @@ print(f"Embedding matrix created of shape {embedding_matrix.shape}")
 class EncoderDecoder(nn.Module):
     def __init__(self):
         super(EncoderDecoder, self).__init__()
-        self.encoder = nn.Parameter(torch.randn(512, 64))
-        self.decoder = nn.Parameter(torch.randn(64, 512))
+        self.encoder = nn.Parameter(torch.randn(512, 16))
+        self.decoder = nn.Parameter(torch.randn(16, 512))
 
     def forward(self, x):
         x = x @ self.encoder
